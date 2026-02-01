@@ -39,7 +39,8 @@ export default function Home() {
 	})
 
 	// intento
-	const { useIsRegistered, useBalances, useTokens } = useCombinatorIntento()
+	const { useAreTokensEnabled, useIsRegistered, useBalances, useTokens } =
+		useCombinatorIntento()
 
 	/// is registered
 	const { data: dataIsRegistered, isLoading: isLoadingIsRegistered } =
@@ -63,7 +64,7 @@ export default function Home() {
 		return dataTokens ?? {}
 	}, [dataTokens])
 
-	const tokensWithBalance = useMemo((): Tokens[] => {
+	const tokensWithBalance = useMemo(() => {
 		if (balances.length === 0 || Object.keys(tokensByChain).length === 0)
 			return []
 
@@ -102,8 +103,16 @@ export default function Home() {
 			.filter(item => item !== null && item.tokens.length > 0) as Tokens[]
 	}, [balances, tokensByChain])
 
-	const sortedTokensWithBalance = useMemo(() => {
-		return [...tokensWithBalance]
+	/// are tokens enabled
+	const { data: dataAreTokensEnabled, isLoading: isLoadingAreTokensEnabled } =
+		useAreTokensEnabled(tokensWithBalance)
+
+	const tokensWithBalanceAndEnabled = useMemo(() => {
+		return dataAreTokensEnabled ?? []
+	}, [dataAreTokensEnabled])
+
+	const sortedTokensWithBalanceAndEnabled = useMemo(() => {
+		return [...tokensWithBalanceAndEnabled]
 			.map(chain => {
 				// Encontrar el token con mayor balance en USD
 				const topToken = chain.tokens.reduce((max, token) => {
@@ -130,7 +139,13 @@ export default function Home() {
 				}
 			})
 			.sort((a, b) => b.totalValueUSD - a.totalValueUSD)
-	}, [tokensWithBalance])
+	}, [tokensWithBalanceAndEnabled])
+
+	const areTokensEnabled = useMemo(() => {
+		return dataAreTokensEnabled ?? []
+	}, [dataAreTokensEnabled])
+
+	console.log('areTokensEnabled:', areTokensEnabled)
 
 	return (
 		<div className='min-h-screen w-full flex flex-col justify-center items-center gap-6'>
@@ -155,7 +170,7 @@ export default function Home() {
 				</div>
 			)}
 			<div className='flex flex-col gap-2 w-full max-w-md'>
-				{sortedTokensWithBalance.map(chain => (
+				{sortedTokensWithBalanceAndEnabled.map(chain => (
 					<div key={chain.chainId} className='bg-zinc-900 rounded-xl p-4'>
 						{/* Header de la chain */}
 						<div className='flex justify-between items-center mb-3'>

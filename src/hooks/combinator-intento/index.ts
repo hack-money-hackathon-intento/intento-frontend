@@ -8,15 +8,23 @@ import { getAddress } from 'viem'
 import { INTENTO_CONTRACTS } from '@/config/constants'
 import { ServiceResult } from '@/models/api.model'
 import { Balances } from '@/models/balances'
-import { TokensByChain } from '@/models/tokens.model'
+import { Tokens, TokensByChain } from '@/models/tokens.model'
 import { IntentoContract } from '@/services/blockchain/contracts/intento'
 
 const QUERY_KEY_PREFIX = 'combinator-intento'
+const QUERY_KEY_ARE_TOKENS_ENABLED = `${QUERY_KEY_PREFIX}-are-tokens-enabled`
 const QUERY_KEY_IS_REGISTERED = `${QUERY_KEY_PREFIX}-is-registered`
 const QUERY_KEY_BALANCES = `${QUERY_KEY_PREFIX}-balances`
 const QUERY_KEY_TOKENS = `${QUERY_KEY_PREFIX}-tokens`
 
-export function useCombinatorIntento() {
+interface CombinatorIntentoReturn {
+	useAreTokensEnabled: (tokens: Tokens[]) => UseQueryResult<Tokens[], Error> // ← Cambiar aquí
+	useIsRegistered: () => UseQueryResult<boolean, Error>
+	useBalances: () => UseQueryResult<Balances[], Error>
+	useTokens: () => UseQueryResult<TokensByChain, Error>
+}
+
+export function useCombinatorIntento(): CombinatorIntentoReturn {
 	// thirdweb
 	const wallet = useActiveWallet()
 	const chainId = useMemo(() => wallet?.getChain()?.id ?? 0, [wallet])
@@ -41,6 +49,51 @@ export function useCombinatorIntento() {
 	}, [account])
 
 	return {
+		useAreTokensEnabled: (
+			tokens: Tokens[]
+		): UseQueryResult<Tokens[], Error> => {
+			return useQuery({
+				queryKey: [QUERY_KEY_ARE_TOKENS_ENABLED, accountAddress],
+				enabled:
+					accountAddress &&
+					accountAddress !== ZERO_ADDRESS &&
+					tokens.length > 0,
+				queryFn: async (): Promise<Tokens[]> => {
+					// Obtener todos los tokens habilitados por contrato
+					const results = await Promise.all(
+						intento.map(contract =>
+							contract.areTokensEnabled(
+								accountAddress,
+								tokens.flatMap(token => token.tokens.map(t => t.address))
+							)
+						)
+					)
+
+					const enabledMap = new Map<string, boolean>()
+					const allAddresses = tokens.flatMap(t =>
+						t.tokens.map(tok => tok.address.toLowerCase())
+					)
+
+					allAddresses.forEach((addr, index) => {
+						const isEnabled = results.some(
+							contractResult => contractResult[index]
+						)
+						enabledMap.set(addr, isEnabled)
+					})
+
+					return tokens.map(chain => ({
+						...chain,
+						tokens: chain.tokens.map(token => ({
+							...token,
+							enabled: enabledMap.get(token.address.toLowerCase()) ?? false
+						}))
+					}))
+				},
+				staleTime: 30000,
+				refetchOnWindowFocus: false,
+				placeholderData: (previous: Tokens[] | undefined) => previous
+			})
+		},
 		useIsRegistered: (): UseQueryResult<boolean, Error> => {
 			return useQuery({
 				queryKey: [QUERY_KEY_IS_REGISTERED, accountAddress],

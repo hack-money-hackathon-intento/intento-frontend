@@ -12,6 +12,7 @@ export interface Token {
 	coinKey?: string
 	logoURI?: string
 	balance?: string
+	enabled?: boolean
 }
 
 export interface Tokens {
