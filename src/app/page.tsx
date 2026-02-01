@@ -7,6 +7,7 @@ import { useEnsName } from 'thirdweb/react'
 import { getAddress } from 'viem'
 
 import { chains, client } from '@/config/thirdweb.config'
+import { useCombinatorIntento } from '@/hooks/combinator-intento'
 
 export default function Home() {
 	// thirdweb
@@ -26,6 +27,16 @@ export default function Home() {
 		address: accountAddress
 	})
 
+	// intento
+	const { useIsRegistered } = useCombinatorIntento()
+
+	const { data: dataIsRegistered, isLoading: isLoadingIsRegistered } =
+		useIsRegistered()
+
+	const isRegistered = useMemo(() => {
+		return dataIsRegistered ?? false
+	}, [dataIsRegistered])
+
 	useEffect(() => {
 		if (ensName) {
 			console.log('ensName:', ensName)
@@ -33,12 +44,23 @@ export default function Home() {
 	}, [ensName])
 
 	return (
-		<div className='min-h-screen w-full flex flex-row justify-center items-center'>
-			<ConnectButton
-				client={client}
-				chains={chains}
-				connectButton={{ label: 'Connect Wallet' }}
-			/>
-		</div>
+		<>
+			<div className='min-h-screen w-full flex flex-row justify-center items-center'>
+				<ConnectButton
+					client={client}
+					chains={chains}
+					connectButton={{ label: 'Connect Wallet' }}
+				/>
+			</div>
+			{isRegistered ? (
+				<div className='min-h-screen w-full flex flex-row justify-center items-center'>
+					<p>You are registered</p>
+				</div>
+			) : (
+				<div className='min-h-screen w-full flex flex-row justify-center items-center'>
+					<p>You are not registered</p>
+				</div>
+			)}
+		</>
 	)
 }
