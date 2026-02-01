@@ -1,5 +1,12 @@
 import { Chain, createThirdwebClient } from 'thirdweb'
-import { arbitrum, avalanche, base, ethereum, optimism, polygon } from 'thirdweb/chains'
+import {
+	arbitrum,
+	avalanche,
+	base,
+	ethereum,
+	optimism,
+	polygon
+} from 'thirdweb/chains'
 
 import { ensureEnvVar } from '@/helpers/ensure-env.helper'
 
@@ -13,7 +20,7 @@ export const client = createThirdwebClient({
 })
 
 export const chains: Chain[] = [
- { ...arbitrum, name: 'Arbitrum' },
+	{ ...arbitrum, name: 'Arbitrum' },
 	{ ...avalanche, name: 'Avalanche' },
 	{ ...base, name: 'Base' },
 	{ ...ethereum, name: 'Ethereum' },

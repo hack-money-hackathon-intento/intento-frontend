@@ -1,6 +1,6 @@
 import { Address } from 'viem'
 
-export type TokensByChain = Record<string, Token[]>
+export type TokensByChain = Record<'8453' | '10' | '137', Token[]>
 
 export interface Token {
 	chainId: number
@@ -11,6 +11,7 @@ export interface Token {
 	priceUSD: string
 	coinKey?: string
 	logoURI?: string
+	balance?: string
 }
 
 export interface Tokens {

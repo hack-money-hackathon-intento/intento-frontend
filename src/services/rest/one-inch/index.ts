@@ -1,9 +1,8 @@
 import { RawAxiosRequestHeaders } from 'axios'
-import { verifyEnvVars } from 'config/const'
+
+import { verifyEnvVars } from '@/config/constants/env-var'
 
 import { balanceService } from './balance'
-import { priceService } from './price'
-import { swapService } from './swap'
 
 function getApiKey(): string {
 	const {
@@ -31,8 +30,6 @@ export function oneInchService() {
 	const headers = getHeaders()
 
 	const { getBalances } = balanceService(host, headers, 'balance/v1.2')
-	const { getPrices } = priceService(host, headers, 'price/v1.1')
-	const { getTokens } = swapService(host, headers, 'swap/v6.1')
 
-	return { getBalances, getPrices, getTokens }
+	return { getBalances }
 }

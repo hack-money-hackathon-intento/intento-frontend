@@ -7,7 +7,7 @@ import { TokensResponse } from '@/services/utils/dtos/tokens.dto'
 import { mapTokensDtoToTokens } from '@/services/utils/mappings/tokens-dto-to-tokens'
 
 type TokensService = {
-	getTokens: (chainId: number) => Promise<ServiceResult<TokensByChain>>
+	getTokens: (chainId?: number) => Promise<ServiceResult<TokensByChain>>
 }
 
 export function tokensService(host: string, endpoint: string): TokensService {
