@@ -44,23 +44,27 @@ export default function Home() {
 	}, [ensName])
 
 	return (
-		<>
-			<div className='min-h-screen w-full flex flex-row justify-center items-center'>
+		<div className='min-h-screen w-full flex flex-col justify-center items-center gap-6'>
+			<div className='w-full flex flex-row justify-center items-center'>
 				<ConnectButton
 					client={client}
 					chains={chains}
 					connectButton={{ label: 'Connect Wallet' }}
 				/>
 			</div>
-			{isRegistered ? (
-				<div className='min-h-screen w-full flex flex-row justify-center items-center'>
+			{isLoadingIsRegistered ? (
+				<div className='w-full flex flex-row justify-center items-center'>
+					<p>Loading...</p>
+				</div>
+			) : isRegistered ? (
+				<div className='w-full flex flex-row justify-center items-center'>
 					<p>You are registered</p>
 				</div>
 			) : (
-				<div className='min-h-screen w-full flex flex-row justify-center items-center'>
+				<div className='w-full flex flex-row justify-center items-center'>
 					<p>You are not registered</p>
 				</div>
 			)}
-		</>
+		</div>
 	)
 }

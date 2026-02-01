@@ -24,3 +24,4 @@ export const INTENTO_CONTRACTS = [
 		contractAddress: '0xD2Ed7b56fF997DA6f5b7b72Cc7676Bc9BA9B9240'
 	}
 ] as IntentoContract[]
+
