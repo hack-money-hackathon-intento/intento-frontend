@@ -1,7 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Address, ZERO_ADDRESS } from 'thirdweb'
 import { ConnectButton, useActiveWallet } from 'thirdweb/react'
 import { useEnsName } from 'thirdweb/react'
@@ -96,6 +96,28 @@ export default function Home() {
 	// Estado para manejar qué chains están expandidas
 	const [expandedChains, setExpandedChains] = useState<Set<number>>(new Set())
 
+	// Estado para manejar tokens seleccionados: "chainId-tokenAddress"
+	const [selectedTokens, setSelectedTokens] = useState<Set<string>>(new Set())
+
+	// Sincronizar checkboxes con el estado "enabled" de los tokens
+	useEffect(() => {
+		if (balancesWithEnabled.length > 0) {
+			const enabledTokens = new Set<string>()
+
+			balancesWithEnabled.forEach(balance => {
+				balance.tokens.forEach(token => {
+					if (token.enabled) {
+						enabledTokens.add(
+							`${balance.chainId}-${token.address.toLowerCase()}`
+						)
+					}
+				})
+			})
+
+			setSelectedTokens(enabledTokens)
+		}
+	}, [balancesWithEnabled])
+
 	// Toggle chain expansion
 	const toggleChain = (chainId: number) => {
 		setExpandedChains(prev => {
@@ -109,12 +131,64 @@ export default function Home() {
 		})
 	}
 
+	// Verificar si todos los tokens de una chain están seleccionados
+	const areAllTokensSelected = (chainId: number) => {
+		const chain = balancesWithEnabled.find(b => b.chainId === chainId)
+		if (!chain || chain.tokens.length === 0) return false
+
+		return chain.tokens.every(token =>
+			selectedTokens.has(`${chainId}-${token.address.toLowerCase()}`)
+		)
+	}
+
+	// Toggle todos los tokens de una chain
+	const toggleAllTokens = (chainId: number) => {
+		const chain = balancesWithEnabled.find(b => b.chainId === chainId)
+		if (!chain) return
+
+		setSelectedTokens(prev => {
+			const newSet = new Set(prev)
+			const allSelected = areAllTokensSelected(chainId)
+
+			if (allSelected) {
+				// Deseleccionar todos
+				chain.tokens.forEach(token => {
+					newSet.delete(`${chainId}-${token.address.toLowerCase()}`)
+				})
+			} else {
+				// Seleccionar todos
+				chain.tokens.forEach(token => {
+					newSet.add(`${chainId}-${token.address.toLowerCase()}`)
+				})
+			}
+			return newSet
+		})
+	}
+
+	// Toggle un token individual
+	const toggleToken = (chainId: number, tokenAddress: string) => {
+		setSelectedTokens(prev => {
+			const newSet = new Set(prev)
+			const key = `${chainId}-${tokenAddress.toLowerCase()}`
+
+			if (newSet.has(key)) {
+				newSet.delete(key)
+			} else {
+				newSet.add(key)
+			}
+			return newSet
+		})
+	}
+
 	// Función para calcular el valor total de una chain (ya no necesita filtrar, se hace en useMemo)
-	const getChainTotalValue = (tokens: typeof balancesWithEnabled[0]['tokens']) => {
+	const getChainTotalValue = (
+		tokens: (typeof balancesWithEnabled)[0]['tokens']
+	) => {
 		return tokens.reduce(
 			(acc, token) =>
 				acc +
-				(Number(token.amount) * Number(token.priceUSD || 0)) / 10 ** token.decimals,
+				(Number(token.amount) * Number(token.priceUSD || 0)) /
+					10 ** token.decimals,
 			0
 		)
 	}
@@ -218,6 +292,9 @@ export default function Home() {
 									{/* Tokens */}
 									<div className='flex flex-col'>
 										{balance.tokens.map((token, tokenIndex) => {
+											const tokenKey = `${balance.chainId}-${token.address.toLowerCase()}`
+											const isSelected = selectedTokens.has(tokenKey)
+
 											return (
 												<div
 													key={tokenIndex}
@@ -237,26 +314,56 @@ export default function Home() {
 																{token.name}
 															</span>
 															<span className='text-zinc-400 text-sm'>
-																{(Number(token.amount) / 10 ** token.decimals).toFixed(
-																	6
-																)}{' '}
+																{(
+																	Number(token.amount) /
+																	10 ** token.decimals
+																).toFixed(6)}{' '}
 																{token.symbol}
 															</span>
 														</div>
 													</div>
-													<div className='flex flex-col items-end'>
-														<span className='text-white'>
-															$
-															{(
-																(Number(token.amount) * Number(token.priceUSD || 0)) /
-																10 ** token.decimals
-															).toFixed(2)}
-														</span>
-														<span
-															className={`text-xs ${token.enabled ? 'text-green-400' : 'text-red-400'}`}
-														>
-															{token.enabled ? 'Enabled' : 'Disabled'}
-														</span>
+													<div className='flex items-center gap-3'>
+														<div className='flex flex-col items-end'>
+															<span className='text-white font-medium'>
+																$
+																{(
+																	(Number(token.amount) *
+																		Number(token.priceUSD || 0)) /
+																	10 ** token.decimals
+																).toFixed(2)}
+															</span>
+															<span
+																className={`text-xs ${token.enabled ? 'text-green-400' : 'text-red-400'}`}
+															>
+																{token.enabled ? 'Enabled' : 'Disabled'}
+															</span>
+														</div>
+														{/* Checkbox del token */}
+														<div className='relative'>
+															<input
+																type='checkbox'
+																checked={isSelected}
+																onChange={() =>
+																	toggleToken(balance.chainId, token.address)
+																}
+																className='w-5 h-5 rounded border-2 border-zinc-600 bg-zinc-800 appearance-none cursor-pointer checked:bg-blue-500 checked:border-blue-500 hover:border-zinc-500 transition-all'
+															/>
+															{isSelected && (
+																<svg
+																	className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 text-white pointer-events-none'
+																	fill='none'
+																	stroke='currentColor'
+																	viewBox='0 0 24 24'
+																>
+																	<path
+																		strokeLinecap='round'
+																		strokeLinejoin='round'
+																		strokeWidth={3}
+																		d='M5 13l4 4L19 7'
+																	/>
+																</svg>
+															)}
+														</div>
 													</div>
 												</div>
 											)
@@ -269,9 +376,35 @@ export default function Home() {
 											<span className='text-white font-semibold text-base'>
 												Total Value
 											</span>
-											<span className='text-white font-bold text-lg'>
-												${totalValue.toFixed(2)}
-											</span>
+											<div className='flex items-center gap-3'>
+												<span className='text-white font-bold text-lg'>
+													${totalValue.toFixed(2)}
+												</span>
+												{/* Checkbox maestro - selecciona/deselecciona todos */}
+												<div className='relative'>
+													<input
+														type='checkbox'
+														checked={areAllTokensSelected(balance.chainId)}
+														onChange={() => toggleAllTokens(balance.chainId)}
+														className='w-5 h-5 rounded border-2 border-zinc-600 bg-zinc-800 appearance-none cursor-pointer checked:bg-blue-500 checked:border-blue-500 hover:border-zinc-500 transition-all'
+													/>
+													{areAllTokensSelected(balance.chainId) && (
+														<svg
+															className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 text-white pointer-events-none'
+															fill='none'
+															stroke='currentColor'
+															viewBox='0 0 24 24'
+														>
+															<path
+																strokeLinecap='round'
+																strokeLinejoin='round'
+																strokeWidth={3}
+																d='M5 13l4 4L19 7'
+															/>
+														</svg>
+													)}
+												</div>
+											</div>
 										</div>
 									</div>
 								</div>

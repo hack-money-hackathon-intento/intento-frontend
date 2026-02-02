@@ -22,7 +22,7 @@ interface CombinatorIntentoReturn {
 export function useCombinatorIntento(): CombinatorIntentoReturn {
 	// thirdweb
 	const wallet = useActiveWallet()
-	const chainId = useMemo(() => wallet?.getChain()?.id ?? 0, [wallet])
+	const _chainId = useMemo(() => wallet?.getChain()?.id ?? 0, [wallet])
 	const account = useMemo(() => wallet?.getAccount(), [wallet])
 	const accountAddress = useMemo(() => {
 		try {
