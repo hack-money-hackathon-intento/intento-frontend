@@ -11,12 +11,14 @@ import { IntentoContract } from '@/services/blockchain/contracts/intento'
 const QUERY_KEY_PREFIX = 'combinator-intento'
 const QUERY_KEY_ARE_TOKENS_ENABLED = `${QUERY_KEY_PREFIX}-are-tokens-enabled`
 const QUERY_KEY_IS_REGISTERED = `${QUERY_KEY_PREFIX}-is-registered`
+const QUERY_KEY_GET_INTENTO_ADDRESS = `${QUERY_KEY_PREFIX}-get-intento-address`
 
 interface CombinatorIntentoReturn {
 	useBalancesWithEnabled: (
 		balances: Balances[]
 	) => UseQueryResult<Balances[], Error>
 	useIsRegistered: () => UseQueryResult<boolean, Error>
+	useGetIntentoAddress: (chainId: number) => UseQueryResult<Address, Error>
 }
 
 export function useCombinatorIntento(): CombinatorIntentoReturn {
@@ -118,6 +120,21 @@ export function useCombinatorIntento(): CombinatorIntentoReturn {
 				staleTime: 30000,
 				refetchOnWindowFocus: false,
 				placeholderData: (previous: boolean | undefined) => previous
+			})
+		},
+		useGetIntentoAddress: (chainId: number): UseQueryResult<Address, Error> => {
+			return useQuery({
+				queryKey: [QUERY_KEY_GET_INTENTO_ADDRESS, chainId],
+				enabled: chainId !== 0,
+				queryFn: async (): Promise<Address> => {
+					return (
+						INTENTO_CONTRACTS.find(contract => contract.chainId === chainId)
+							?.contractAddress ?? ZERO_ADDRESS
+					)
+				},
+				staleTime: 30000,
+				refetchOnWindowFocus: false,
+				placeholderData: (previous: Address | undefined) => previous
 			})
 		}
 	}

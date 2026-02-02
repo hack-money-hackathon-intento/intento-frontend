@@ -31,17 +31,19 @@ export class ERC20Contract extends BaseContract {
 	//        READ METHODS
 	// =========================
 
-	async allowance(owner: Address, spender: Address): Promise<number> {
+	async allowance(owner: Address, spender: Address): Promise<bigint> {
 		try {
 			const value = await this.read<bigint>('allowance', [owner, spender])
-			return Number(value)
+			return value
 		} catch (error) {
 			console.error('❌', error)
-			return 0
+			return BigInt(0)
 		}
 	}
 
-	async balanceOf(address: Address): Promise<number> {
+	async balanceOf(
+		address: Address
+	): Promise<{ balance: number; rawBalance: bigint }> {
 		try {
 			const [balance, decimals] = await Promise.all([
 				this.read<bigint>('balanceOf', [address]),
@@ -49,10 +51,10 @@ export class ERC20Contract extends BaseContract {
 			])
 
 			const formattedBalance = formatUnits(balance, decimals)
-			return Number(formattedBalance)
+			return { balance: Number(formattedBalance), rawBalance: balance }
 		} catch (error) {
 			console.error('❌', error)
-			return 0
+			return { balance: 0, rawBalance: BigInt(0) }
 		}
 	}
 
