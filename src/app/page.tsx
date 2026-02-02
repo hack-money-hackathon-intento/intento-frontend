@@ -9,7 +9,7 @@ import { getAddress } from 'viem'
 
 import { chains, client } from '@/config/thirdweb.config'
 import { useCombinatorIntento } from '@/hooks/combinator-intento'
-import { useLiFi } from '@/hooks/li-fi'
+import { useOctav } from '@/hooks/octav'
 
 export default function Home() {
 	// thirdweb
@@ -29,9 +29,9 @@ export default function Home() {
 		address: accountAddress
 	})
 
-	// li.fi
+	// octav
 	// balances
-	const { useBalances } = useLiFi()
+	const { useBalances } = useOctav()
 	const { data: dataBalances, isLoading: _isLoadingBalances } = useBalances()
 
 	const balances = useMemo(() => {

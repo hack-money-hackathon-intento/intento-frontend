@@ -2,11 +2,11 @@ import { RawAxiosRequestHeaders } from 'axios'
 
 import { register } from '@/config/constants/register'
 
-import { balanceService } from './balance'
+import { walletsIntegrations } from './integrations/balances'
 
 function getApiKey(): string {
 	const {
-		oneInch: { apiKey }
+		octav: { apiKey }
 	} = register
 	return apiKey
 }
@@ -20,16 +20,16 @@ function getHeaders(): RawAxiosRequestHeaders {
 }
 
 function getHost(): string {
-	const host: string = 'https://api.1inch.com'
-
-	return host
+	return 'https://api.octav.fi/v1'
 }
 
-export function oneInchService() {
+export function octavService() {
 	const host = getHost()
 	const headers = getHeaders()
 
-	const { getBalances } = balanceService(host, headers, 'balance/v1.2')
+	const { getBalances } = walletsIntegrations(host, headers, 'wallet')
 
-	return { getBalances }
+	return {
+		getBalances
+	}
 }

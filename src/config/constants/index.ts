@@ -25,4 +25,4 @@ export const INTENTO_CONTRACTS = [
 	}
 ] as IntentoContract[]
 
-export { verifyEnvVars } from './env-var'
+export { verifyEnvVars } from './register'

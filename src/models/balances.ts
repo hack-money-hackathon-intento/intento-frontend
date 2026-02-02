@@ -7,11 +7,8 @@ export interface Token {
 	amount: string
 	name: string
 	chainId: number
-	priceUSD?: string
-	marketCapUSD?: number
-	volumeUSD24H?: number
-	fdvUSD?: number
-	logoURI?: string
+	priceUSD: string
+	logoURI: string
 	enabled?: boolean
 }
 
