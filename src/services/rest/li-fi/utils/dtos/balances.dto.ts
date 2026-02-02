@@ -1,8 +1,6 @@
 import { Address } from 'viem'
 
-export type TokensByChain = Record<string, Token[]>
-
-export interface Token {
+export interface TokenDto {
 	address: Address
 	symbol: string
 	decimals: number
@@ -16,7 +14,10 @@ export interface Token {
 	logoURI?: string
 }
 
-export interface Tokens {
-	chainId: number
-	tokens: Token[]
+export type BalancesDto = Record<string, TokenDto[]>
+
+export interface BalancesResponse {
+	walletAddress: Address
+	balances: BalancesDto
+	limit: number
 }

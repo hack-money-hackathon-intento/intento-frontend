@@ -1,11 +1,21 @@
 import { Address } from 'viem'
 
-export interface Balance {
+export interface Token {
 	address: Address
-	balance: string
+	symbol: string
+	decimals: number
+	amount: string
+	name: string
+	chainId: number
+	priceUSD?: string
+	marketCapUSD?: number
+	volumeUSD24H?: number
+	fdvUSD?: number
+	logoURI?: string
+	enabled?: boolean
 }
 
 export interface Balances {
 	chainId: number
-	balances: Balance[]
+	tokens: Token[]
 }

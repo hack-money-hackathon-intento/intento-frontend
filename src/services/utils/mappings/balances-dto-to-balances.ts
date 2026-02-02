@@ -8,10 +8,10 @@ export function mapBalancesDtoToBalances(
 	response: BalancesDto
 ): Balances {
 	const balances: Balance[] = Object.entries(response)
-		.filter(([, balance]) => BigInt(balance) > BigInt(0))
+		.filter(([, balance]) => BigInt(balance.balance) > BigInt(0))
 		.map(([address, balance]) => ({
 			address: getAddress(address as Address),
-			balance: balance as string
+			balance: balance.balance as string
 		}))
 
 	return {

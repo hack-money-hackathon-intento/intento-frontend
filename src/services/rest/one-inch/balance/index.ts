@@ -27,14 +27,8 @@ export function balanceService(
 		): Promise<ServiceResult<Balances>> => {
 			try {
 				const response = await axios.get<BalancesDto>(
-					`${host}/${endpoint}/${chainId}/balances/${address}`,
-					{
-						headers,
-						params: {
-							chainId,
-							address
-						}
-					}
+					`${host}/${endpoint}/${chainId}/allowancesAndBalances/${address}/${address}`,
+					{ headers }
 				)
 
 				return {
