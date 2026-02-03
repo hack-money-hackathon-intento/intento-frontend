@@ -11,6 +11,7 @@ import { IntentoContract } from '@/services/blockchain/contracts/intento'
 const QUERY_KEY_PREFIX = 'combinator-intento'
 const QUERY_KEY_ARE_TOKENS_ENABLED = `${QUERY_KEY_PREFIX}-are-tokens-enabled`
 const QUERY_KEY_IS_REGISTERED = `${QUERY_KEY_PREFIX}-is-registered`
+const QUERY_KEY_IS_REGISTERED_BY_CHAIN = `${QUERY_KEY_PREFIX}-is-registered-by-chain`
 const QUERY_KEY_GET_INTENTO_ADDRESS = `${QUERY_KEY_PREFIX}-get-intento-address`
 
 interface CombinatorIntentoReturn {
@@ -18,6 +19,7 @@ interface CombinatorIntentoReturn {
 		balances: Balances[]
 	) => UseQueryResult<Balances[], Error>
 	useIsRegistered: () => UseQueryResult<boolean, Error>
+	useIsRegisteredByChain: () => UseQueryResult<Record<number, boolean>, Error>
 	useGetIntentoAddress: (chainId: number) => UseQueryResult<Address, Error>
 }
 
@@ -123,6 +125,32 @@ export function useCombinatorIntento(): CombinatorIntentoReturn {
 				staleTime: 30000,
 				refetchOnWindowFocus: false,
 				placeholderData: (previous: boolean | undefined) => previous
+			})
+		},
+		useIsRegisteredByChain: (): UseQueryResult<
+			Record<number, boolean>,
+			Error
+		> => {
+			return useQuery({
+				queryKey: [QUERY_KEY_IS_REGISTERED_BY_CHAIN, accountAddress],
+				enabled: accountAddress && accountAddress !== ZERO_ADDRESS,
+				queryFn: async (): Promise<Record<number, boolean>> => {
+					const results = await Promise.all(
+						intento.map(contract => contract.isRegistered(accountAddress))
+					)
+
+					const registeredByChain: Record<number, boolean> = {}
+					intento.forEach((contract, i) => {
+						const chainId = contract.getChain().id
+						registeredByChain[chainId] = results[i] ?? false
+					})
+
+					return registeredByChain
+				},
+				staleTime: 30000,
+				refetchOnWindowFocus: false,
+				placeholderData: (previous: Record<number, boolean> | undefined) =>
+					previous
 			})
 		},
 		useGetIntentoAddress: (chainId: number): UseQueryResult<Address, Error> => {

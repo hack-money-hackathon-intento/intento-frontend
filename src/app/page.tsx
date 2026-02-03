@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRef } from 'react'
 import { Address, ZERO_ADDRESS } from 'thirdweb'
 import { ConnectButton, useActiveWallet, useEnsName } from 'thirdweb/react'
-import { encodeFunctionData, getAddress } from 'viem'
+import type { Hex } from 'viem'
+import { encodeFunctionData, getAddress, zeroAddress } from 'viem'
+import { numberToHex } from 'viem'
 
 import { intentoAbi } from '@/assets/json/abis'
 import { chains, client } from '@/config/thirdweb.config'
@@ -15,6 +17,10 @@ import { useLiFi } from '@/hooks/li-fi'
 
 import { Blockchain } from './componets/Blockchain'
 import { RegisterStep, RegisterStepper } from './componets/Stepper.tsx'
+
+type Eip1193Provider = {
+	request: (args: { method: string; params?: unknown[] }) => Promise<unknown>
+}
 
 type StepStatus = 'idle' | 'loading' | 'done' | 'error'
 
@@ -65,15 +71,24 @@ export default function Home() {
 	const balances = useMemo(() => dataBalances ?? [], [dataBalances])
 
 	// combinator intento
-	const { useBalancesWithEnabled, useIsRegistered } = useCombinatorIntento()
+	const { useBalancesWithEnabled, useIsRegistered, useIsRegisteredByChain } =
+		useCombinatorIntento()
 
-	/// balances with enabled
+	/// is registered (any chain)
 	const { data: dataIsRegistered, isLoading: isLoadingIsRegistered } =
 		useIsRegistered()
 
 	const isRegistered = useMemo(
 		() => dataIsRegistered ?? false,
 		[dataIsRegistered]
+	)
+
+	/// is registered by chain
+	const { data: dataIsRegisteredByChain } = useIsRegisteredByChain()
+
+	const isRegisteredByChain = useMemo(
+		() => dataIsRegisteredByChain ?? {},
+		[dataIsRegisteredByChain]
 	)
 
 	/// balances with enabled
@@ -347,70 +362,321 @@ export default function Home() {
 		)
 	}, [balancesWithEnabled])
 
-	const onRegister = async () => {
-		// limpia timers previos
+	const onSetTokens = async () => {
 		timeoutsRef.current.forEach(t => clearTimeout(t))
 		timeoutsRef.current = []
-	
-		// approvals por chain (solo para enable=true y donde haga falta)
-		const approveCallsByChain = buildApproveCalls(selectionByChain)
-	
-		// ⚠️ los chains a procesar deben venir de selectionByChain (si no, perderías register cuando no hay approve)
+
 		const chainIds = Object.keys(selectionByChain)
 			.map(Number)
 			.sort((a, b) => [10, 137, 8453].indexOf(a) - [10, 137, 8453].indexOf(b))
-	
+
 		if (chainIds.length === 0) return
-	
-		// init statuses
+		if (!wallet || !accountAddress || accountAddress === ZERO_ADDRESS) return
+
 		setIsRegistering(true)
+
+		// init statuses
 		setRegisterStatusByChain(() => {
-			const base: Record<number, 'idle'> = {}
+			const base: Record<number, StepStatus> = {}
 			chainIds.forEach(id => (base[id] = 'idle'))
 			return base
 		})
-	
-		chainIds.forEach((chainId, idx) => {
-			const chainKey = String(chainId)
-			const entry = selectionByChain[chainKey]
-			if (!entry) return
-	
-			const approveCalls = approveCallsByChain[chainKey] ?? []
-	
-			const registryCall = {
-				to: entry.spender,
-				data: encodeFunctionData({
-					abi: intentoAbi,
-					functionName: 'register',
-					args: [entry.addresses, entry.enable]
-				})
-			}
-	
-			const calls = [...approveCalls, registryCall]
-	
-			// step: loading
-			const t1 = window.setTimeout(() => {
+
+		const provider = await getProviderFromThirdwebWallet(wallet)
+		const approveCallsByChain = buildApproveCalls(selectionByChain)
+
+		try {
+			for (const chainId of chainIds) {
+				const chainKey = String(chainId)
+				const entry = selectionByChain[chainKey]
+				if (!entry) continue
+
 				setRegisterStatusByChain(prev => ({ ...prev, [chainId]: 'loading' }))
-				// console.log('CHAIN', chainId, 'CALLS', calls)
-			}, idx * 1400)
-	
-			// step: done
-			const t2 = window.setTimeout(() => {
-				setRegisterStatusByChain(prev => ({ ...prev, [chainId]: 'done' }))
-	
-				// último => termina
-				if (idx === chainIds.length - 1) {
-					const t3 = window.setTimeout(() => {
-						setIsRegistering(false)
-					}, 400)
-					timeoutsRef.current.push(t3)
+
+				// 1) asegurar red activa en MetaMask
+				await ensureChain(provider, chainId)
+
+				const approveCalls = approveCallsByChain[chainKey] ?? []
+
+				// --- build setTokens args ---
+				const tokenAddresses: Address[] = entry.addresses
+					.map(a => {
+						try {
+							return getAddress(a) as Address
+						} catch {
+							return null
+						}
+					})
+					.filter((a): a is Address => a !== null)
+
+				const enableFlags = entry.enable.slice(0, tokenAddresses.length)
+
+				if (tokenAddresses.length === 0) continue
+
+				const setTokensCall = {
+					to: entry.spender,
+					data: encodeFunctionData({
+						abi: intentoAbi,
+						functionName: 'setTokens',
+						args: [tokenAddresses, enableFlags]
+					}),
+					value: '0x0' as const
 				}
-			}, idx * 1400 + 1000)
-	
-			timeoutsRef.current.push(t1, t2)
-		})
+
+				// approves + setTokens
+				const calls = [
+					...approveCalls.map(c => ({
+						to: c!.to,
+						data: c!.data,
+						value: '0x0' as const
+					})),
+					setTokensCall
+				]
+
+				// 2) atomic batch si se puede
+				const canAtomic = await supportsAtomicBatch(
+					provider,
+					accountAddress as Address,
+					chainId
+				)
+
+				if (canAtomic) {
+					const { id: batchId } = await sendAtomicBatch(
+						provider,
+						accountAddress as Address,
+						chainId,
+						calls
+					)
+
+					await pollBatchStatus(provider, batchId)
+				} else {
+					await sendSequential(provider, accountAddress as Address, calls)
+				}
+
+				setRegisterStatusByChain(prev => ({ ...prev, [chainId]: 'done' }))
+			}
+		} catch (e) {
+			console.error(e)
+		} finally {
+			setIsRegistering(false)
+		}
 	}
-	
+
+	const onRegister = async () => {
+		timeoutsRef.current.forEach(t => clearTimeout(t))
+		timeoutsRef.current = []
+
+		const chainIds = Object.keys(selectionByChain)
+			.map(Number)
+			.sort((a, b) => [10, 137, 8453].indexOf(a) - [10, 137, 8453].indexOf(b))
+
+		if (chainIds.length === 0) return
+		if (!wallet || !accountAddress || accountAddress === ZERO_ADDRESS) return
+
+		setIsRegistering(true)
+
+		// init statuses
+		setRegisterStatusByChain(() => {
+			const base: Record<number, StepStatus> = {}
+			chainIds.forEach(id => (base[id] = 'idle'))
+			return base
+		})
+
+		const provider = await getProviderFromThirdwebWallet(wallet)
+		const approveCallsByChain = buildApproveCalls(selectionByChain)
+
+		try {
+			for (const chainId of chainIds) {
+				const chainKey = String(chainId)
+				const entry = selectionByChain[chainKey]
+				if (!entry) continue
+
+				setRegisterStatusByChain(prev => ({ ...prev, [chainId]: 'loading' }))
+
+				// 1) asegurar red activa en MetaMask (obligatorio)
+				await ensureChain(provider, chainId)
+
+				const approveCalls = approveCallsByChain[chainKey] ?? []
+				const hasEnableTrue = entry.enable.some(Boolean)
+
+				// --- build register args (tokens, amounts, enableds) ---
+				let registerAddresses: Address[] = []
+				let registerAmounts: bigint[] = []
+				let registerEnable: boolean[] = []
+
+				if (approveCalls.length === 0 && !hasEnableTrue) {
+					for (let i = 0; i < entry.addresses.length; i++) {
+						if (entry.enable[i] === false) {
+							try {
+								registerAddresses.push(
+									getAddress(entry.addresses[i]) as Address
+								)
+								registerAmounts.push(BigInt(0)) // disabled = 0 amount
+								registerEnable.push(false)
+							} catch {}
+						}
+					}
+					if (registerAddresses.length === 0) {
+						registerAddresses = [zeroAddress]
+						registerAmounts = [BigInt(0)]
+						registerEnable = [false]
+					}
+				} else {
+					for (let i = 0; i < entry.addresses.length; i++) {
+						try {
+							const addr = getAddress(entry.addresses[i]) as Address
+							registerAddresses.push(addr)
+							// Si está enabled, pasar el balance; si no, 0
+							registerAmounts.push(
+								entry.enable[i] ? entry.balances[i] : BigInt(0)
+							)
+							registerEnable.push(entry.enable[i])
+						} catch {
+							// skip invalid address
+						}
+					}
+
+					if (registerAddresses.length === 0) {
+						registerAddresses = [zeroAddress]
+						registerAmounts = [BigInt(0)]
+						registerEnable = [false]
+					}
+				}
+
+				const registryCall = {
+					to: entry.spender,
+					data: encodeFunctionData({
+						abi: intentoAbi,
+						functionName: 'register',
+						args: [registerAddresses, registerAmounts, registerEnable]
+					}),
+					value: '0x0' as const
+				}
+
+				// IMPORTANT: approveCalls debe ser {to,data,value?} compatible
+				const calls = [
+					...approveCalls.map(c => ({
+						to: c!.to,
+						data: c!.data,
+						value: '0x0' as const
+					})),
+					registryCall
+				]
+
+				// 2) atomic batch si se puede
+				const canAtomic = await supportsAtomicBatch(
+					provider,
+					accountAddress as Address,
+					chainId
+				)
+
+				if (canAtomic) {
+					const { id: batchId } = await sendAtomicBatch(
+						provider,
+						accountAddress as Address,
+						chainId,
+						calls
+					)
+
+					// 3) track status (opcional pero recomendado)
+					await pollBatchStatus(provider, batchId)
+				} else {
+					// fallback: no atómico
+					await sendSequential(provider, accountAddress as Address, calls)
+				}
+
+				setRegisterStatusByChain(prev => ({ ...prev, [chainId]: 'done' }))
+			}
+		} catch (e) {
+			console.error(e)
+			// marca como error la chain actual si quieres (aquí simple: general)
+			// (mejor: trackear currentChainId en el loop y setearlo)
+		} finally {
+			setIsRegistering(false)
+		}
+	}
+
+	const onUnregister = async () => {
+		timeoutsRef.current.forEach(t => clearTimeout(t))
+		timeoutsRef.current = []
+
+		// Solo incluir chains donde el usuario está registrado
+		const chainIds = Object.keys(selectionByChain)
+			.map(Number)
+			.filter(chainId => isRegisteredByChain[chainId] === true) // ← omitir no registrados
+			.sort((a, b) => [10, 137, 8453].indexOf(a) - [10, 137, 8453].indexOf(b))
+
+		if (chainIds.length === 0) return
+		if (!wallet || !accountAddress || accountAddress === ZERO_ADDRESS) return
+
+		setIsRegistering(true)
+
+		// init statuses
+		setRegisterStatusByChain(() => {
+			const base: Record<number, StepStatus> = {}
+			chainIds.forEach(id => (base[id] = 'idle'))
+			return base
+		})
+
+		const provider = await getProviderFromThirdwebWallet(wallet)
+
+		try {
+			for (const chainId of chainIds) {
+				const chainKey = String(chainId)
+				const entry = selectionByChain[chainKey]
+				if (!entry) continue
+
+				// Double check: skip si no está registrado en esta chain
+				if (!isRegisteredByChain[chainId]) {
+					setRegisterStatusByChain(prev => ({ ...prev, [chainId]: 'done' }))
+					continue
+				}
+
+				setRegisterStatusByChain(prev => ({ ...prev, [chainId]: 'loading' }))
+
+				// 1) asegurar red activa en MetaMask
+				await ensureChain(provider, chainId)
+
+				const unregisterCall = {
+					to: entry.spender,
+					data: encodeFunctionData({
+						abi: intentoAbi,
+						functionName: 'unregister',
+						args: []
+					}),
+					value: '0x0' as const
+				}
+
+				const calls = [unregisterCall]
+
+				// 2) atomic batch si se puede (aunque solo es 1 call)
+				const canAtomic = await supportsAtomicBatch(
+					provider,
+					accountAddress as Address,
+					chainId
+				)
+
+				if (canAtomic) {
+					const { id: batchId } = await sendAtomicBatch(
+						provider,
+						accountAddress as Address,
+						chainId,
+						calls
+					)
+
+					await pollBatchStatus(provider, batchId)
+				} else {
+					await sendSequential(provider, accountAddress as Address, calls)
+				}
+
+				setRegisterStatusByChain(prev => ({ ...prev, [chainId]: 'done' }))
+			}
+		} catch (e) {
+			console.error(e)
+		} finally {
+			setIsRegistering(false)
+		}
+	}
 
 	return (
 		<div className='min-h-screen w-full flex flex-col justify-center items-center gap-6'>
@@ -427,8 +693,42 @@ export default function Home() {
 					<p>Loading...</p>
 				</div>
 			) : isRegistered ? (
-				<div className='w-full flex flex-row justify-center items-center'>
-					<p>You are registered</p>
+				<div className='w-full flex flex-col justify-center items-center gap-3'>
+					<p className='text-green-400'>✓ You are registered</p>
+
+					{Object.keys(selectionByChain).length > 0 && (
+						<div className='w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col gap-4'>
+							<RegisterStepper steps={registerSteps} />
+
+							<div className='flex gap-2'>
+								<button
+									onClick={onSetTokens}
+									disabled={isRegistering}
+									className={[
+										'flex-1 text-white px-4 py-2 rounded-md',
+										isRegistering
+											? 'bg-zinc-700 cursor-not-allowed'
+											: 'bg-emerald-600 hover:bg-emerald-700'
+									].join(' ')}
+								>
+									{isRegistering ? 'Processing...' : 'Update Tokens'}
+								</button>
+
+								<button
+									onClick={onUnregister}
+									disabled={isRegistering}
+									className={[
+										'flex-1 text-white px-4 py-2 rounded-md',
+										isRegistering
+											? 'bg-zinc-700 cursor-not-allowed'
+											: 'bg-red-600 hover:bg-red-700'
+									].join(' ')}
+								>
+									{isRegistering ? 'Processing...' : 'Unregister'}
+								</button>
+							</div>
+						</div>
+					)}
 				</div>
 			) : (
 				<div className='w-full flex flex-col justify-center items-center gap-3'>
@@ -438,18 +738,33 @@ export default function Home() {
 						<div className='w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col gap-4'>
 							<RegisterStepper steps={registerSteps} />
 
-							<button
-								onClick={onRegister}
-								disabled={isRegistering}
-								className={[
-									'text-white px-4 py-2 rounded-md',
-									isRegistering
-										? 'bg-zinc-700 cursor-not-allowed'
-										: 'bg-blue-500 hover:bg-blue-600'
-								].join(' ')}
-							>
-								{isRegistering ? 'Registering...' : 'Register'}
-							</button>
+							<div className='flex gap-2'>
+								<button
+									onClick={onRegister}
+									disabled={isRegistering}
+									className={[
+										'flex-1 text-white px-4 py-2 rounded-md',
+										isRegistering
+											? 'bg-zinc-700 cursor-not-allowed'
+											: 'bg-blue-500 hover:bg-blue-600'
+									].join(' ')}
+								>
+									{isRegistering ? 'Registering...' : 'Register'}
+								</button>
+
+								<button
+									onClick={onSetTokens}
+									disabled={isRegistering}
+									className={[
+										'flex-1 text-white px-4 py-2 rounded-md',
+										isRegistering
+											? 'bg-zinc-700 cursor-not-allowed'
+											: 'bg-emerald-600 hover:bg-emerald-700'
+									].join(' ')}
+								>
+									{isRegistering ? 'Processing...' : 'Set Tokens'}
+								</button>
+							</div>
 						</div>
 					)}
 				</div>
@@ -487,4 +802,154 @@ export default function Home() {
 			</div>
 		</div>
 	)
+}
+
+function toHexChainId(chainId: number): Hex {
+	// 10 => 0xa, 137 => 0x89, 8453 => 0x2105
+	return numberToHex(chainId)
+}
+
+async function getProviderFromThirdwebWallet(
+	wallet: unknown
+): Promise<Eip1193Provider> {
+	const w = wallet as
+		| { getProvider?: () => Promise<unknown> }
+		| undefined
+		| null
+	// 1) Intentar obtener el provider del wallet de thirdweb
+	if (w?.getProvider) {
+		try {
+			const p = (await w.getProvider()) as Eip1193Provider | undefined
+			if (p?.request) return p
+		} catch {
+			// continuar al fallback
+		}
+	}
+
+	// 2) Fallback: usar window.ethereum directamente (injected wallets)
+	const win = typeof window !== 'undefined' ? window : undefined
+	const ethereum = (win as { ethereum?: Eip1193Provider } | undefined)?.ethereum
+	if (ethereum?.request) {
+		return ethereum
+	}
+
+	throw new Error(
+		'No EIP-1193 provider found. Make sure you are using an injected wallet like MetaMask.'
+	)
+}
+
+async function ensureChain(provider: Eip1193Provider, chainId: number) {
+	const hexId = toHexChainId(chainId)
+	const current = (await provider.request({ method: 'eth_chainId' })) as string
+	if (current?.toLowerCase() === hexId.toLowerCase()) return
+
+	await provider.request({
+		method: 'wallet_switchEthereumChain',
+		params: [{ chainId: hexId }]
+	})
+}
+
+async function supportsAtomicBatch(
+	provider: Eip1193Provider,
+	from: Address,
+	chainId: number
+): Promise<boolean> {
+	const hexId = toHexChainId(chainId)
+
+	let caps: Record<string, { atomic?: { status?: string } }> | undefined
+
+	try {
+		caps = (await provider.request({
+			method: 'wallet_getCapabilities',
+			params: [from, [hexId]]
+		})) as typeof caps
+	} catch {
+		return false
+	}
+
+	const status = caps?.[hexId]?.atomic?.status
+	return status === 'supported' || status === 'ready'
+}
+
+type BatchCall = { to: Address; data?: Hex; value?: Hex }
+
+async function sendAtomicBatch(
+	provider: Eip1193Provider,
+	from: Address,
+	chainId: number,
+	calls: BatchCall[]
+): Promise<{ id: string }> {
+	const hexId = toHexChainId(chainId)
+
+	const result = await provider.request({
+		method: 'wallet_sendCalls',
+		params: [
+			{
+				version: '2.0.0',
+				from,
+				chainId: hexId,
+				atomicRequired: true,
+				calls: calls.map(c => ({
+					to: c.to,
+					data: c.data,
+					value: c.value ?? '0x0'
+				}))
+			}
+		]
+	})
+
+	// MetaMask retorna { id }
+	return result as { id: string }
+}
+
+async function pollBatchStatus(
+	provider: Eip1193Provider,
+	batchId: string,
+	opts: { intervalMs?: number; timeoutMs?: number } = {}
+) {
+	const intervalMs = opts.intervalMs ?? 1200
+	const timeoutMs = opts.timeoutMs ?? 120_000
+	const start = Date.now()
+
+	while (true) {
+		const result = (await provider.request({
+			method: 'wallet_getCallsStatus',
+			params: [batchId]
+		})) as { status?: number } | undefined
+
+		// 200 = confirmed (según doc)
+		if (result?.status === 200) return result
+
+		if (Date.now() - start > timeoutMs) {
+			throw new Error(`Batch status timeout for id=${batchId}`)
+		}
+
+		await new Promise(r => setTimeout(r, intervalMs))
+	}
+}
+
+// Fallback: manda N txs (NO atómico) si atomic no soportado
+async function sendSequential(
+	provider: Eip1193Provider,
+	from: Address,
+	calls: BatchCall[]
+): Promise<string[]> {
+	const txHashes: string[] = []
+
+	for (const c of calls) {
+		const txHash = await provider.request({
+			method: 'eth_sendTransaction',
+			params: [
+				{
+					from,
+					to: c.to,
+					data: c.data,
+					value: c.value ?? '0x0'
+				}
+			]
+		})
+		txHashes.push(txHash as string)
+	}
+
+	return txHashes
 }

@@ -68,8 +68,12 @@ export function useErc20(
 		// =========================
 		useAllowance: (spender: Address): UseQueryResult<bigint, Error> => {
 			return useQuery({
-				queryKey: [QUERY_KEY_ALLOWANCE, accountAddress] as const,
-				enabled: !!accountAddress && accountAddress !== zeroAddress,
+				queryKey: [QUERY_KEY_ALLOWANCE, accountAddress, spender] as const,
+				enabled:
+					!!accountAddress &&
+					accountAddress !== zeroAddress &&
+					!!spender &&
+					spender !== zeroAddress,
 				queryFn: async (): Promise<bigint> => {
 					return await erc20.allowance(accountAddress, spender)
 				},

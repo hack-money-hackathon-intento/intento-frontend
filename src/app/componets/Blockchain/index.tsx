@@ -92,6 +92,8 @@ export function Blockchain(props: Props) {
 		})
 	}, [balance.chainId, balance.tokens, selectedTokens])
 
+	// Note: ERC20 allowance checks are done per-token in TokenMetaRow, not here
+
 	return (
 		<div key={index} className='bg-zinc-900 rounded-xl overflow-hidden'>
 			{/* Header */}
