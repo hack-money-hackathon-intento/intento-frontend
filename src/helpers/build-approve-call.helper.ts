@@ -1,130 +1,100 @@
 import {
-	type Address,
-	encodeFunctionData,
-	erc20Abi,
-	getAddress,
-	type Hex,
-	maxUint256,
-	zeroAddress
+  type Address,
+  encodeFunctionData,
+  erc20Abi,
+  getAddress,
+  type Hex,
+  maxUint256,
+  zeroAddress
 } from 'viem'
 
 type Call = { to: Address; data: Hex }
-type CallsByToken = (Call[] | null)[]
 
 type ParticipatingTokens = Record<
-	string,
-	{
-		spender: Address
-		addresses: string[]
-		enable: boolean[]
-		balances: bigint[]
-		allowances: bigint[]
-		calls?: CallsByToken // 1:1 con addresses
-	}
+  string,
+  {
+    spender: Address
+    addresses: string[]
+    enable: boolean[]
+    balances: bigint[]
+    allowances: bigint[]
+  }
 >
 
 export function buildApproveCalls(
-	participatingTokens: ParticipatingTokens
-): ParticipatingTokens {
-	const out: ParticipatingTokens = {}
+  participatingTokens: ParticipatingTokens
+): Record<string, Call[]> {
+  const outByChain: Record<string, Call[]> = {}
 
-	for (const [chainId, entry] of Object.entries(participatingTokens)) {
-		const spender = entry.spender
-		if (!spender) throw new Error(`Missing spender for chainId=${chainId}`)
+  for (const [chainId, entry] of Object.entries(participatingTokens)) {
+    const spender = entry.spender
+    if (!spender) throw new Error(`Missing spender for chainId=${chainId}`)
 
-		const { addresses, enable, balances, allowances } = entry
-		const length = addresses.length
+    const { addresses, enable, balances, allowances } = entry
+    const length = addresses.length
 
-		if (
-			enable.length !== length ||
-			balances.length !== length ||
-			allowances.length !== length
-		) {
-			throw new Error(`MISMATCH arrays for chainId=${chainId}`)
-		}
+    if (
+      enable.length !== length ||
+      balances.length !== length ||
+      allowances.length !== length
+    ) {
+      throw new Error(`MISMATCH arrays for chainId=${chainId}`)
+    }
 
-		// calls alineado con addresses
-		const calls: CallsByToken = new Array(length).fill(null)
+    const chainCalls: Call[] = []
 
-		for (let i = 0; i < length; i++) {
-			// solo si el usuario quiere habilitar
-			if (!enable[i]) {
-				calls[i] = null
-				continue
-			}
+    for (let i = 0; i < length; i++) {
+      // ✅ si el usuario NO quiere habilitar, no crees approvals
+      if (!enable[i]) continue
 
-			const addr = addresses[i]
-			if (!addr) {
-				calls[i] = null
-				continue
-			}
+      const addr = addresses[i]
+      if (!addr) continue
 
-			let tokenAddress: Address
-			try {
-				tokenAddress = getAddress(addr)
-			} catch {
-				calls[i] = null
-				continue
-			}
+      let tokenAddress: Address
+      try {
+        tokenAddress = getAddress(addr)
+      } catch {
+        continue
+      }
 
-			// native token no se aprueba
-			if (tokenAddress === zeroAddress) {
-				calls[i] = null
-				continue
-			}
+      // native no se aprueba
+      if (tokenAddress === zeroAddress) continue
 
-			const amountNeeded = balances[i] ?? BigInt(0)
-			if (amountNeeded === 0n) {
-				calls[i] = null
-				continue
-			}
+      const amountNeeded = balances[i] ?? BigInt(0)
+      if (amountNeeded === BigInt(0)) continue
 
-			const allowance = allowances[i] ?? BigInt(0)
-			if (allowance >= amountNeeded) {
-				calls[i] = null
-				continue
-			}
+      const allowance = allowances[i] ?? BigInt(0)
+      if (allowance >= amountNeeded) continue
 
-			// si ya está “casi infinito”, no hagas nada
-			if (allowance >= maxUint256 / BigInt(2)) {
-				calls[i] = null
-				continue
-			}
+      // si ya está “casi infinito”, no hagas nada
+      if (allowance >= maxUint256 / BigInt(2)) continue
 
-			const tokenCalls: Call[] = []
+      // compat USDT: si allowance > 0, reset antes
+      if (allowance > BigInt(0)) {
+        chainCalls.push({
+          to: tokenAddress,
+          data: encodeFunctionData({
+            abi: erc20Abi,
+            functionName: 'approve',
+            args: [spender, BigInt(0)]
+          })
+        })
+      }
 
-			// compat USDT: si allowance > 0, reset antes
-			if (allowance > 0n) {
-				tokenCalls.push({
-					to: tokenAddress,
-					data: encodeFunctionData({
-						abi: erc20Abi,
-						functionName: 'approve',
-						args: [spender, BigInt(0)]
-					})
-				})
-			}
+      chainCalls.push({
+        to: tokenAddress,
+        data: encodeFunctionData({
+          abi: erc20Abi,
+          functionName: 'approve',
+          args: [spender, maxUint256]
+        })
+      })
+    }
 
-			tokenCalls.push({
-				to: tokenAddress,
-				data: encodeFunctionData({
-					abi: erc20Abi,
-					functionName: 'approve',
-					args: [spender, maxUint256]
-				})
-			})
+    if (chainCalls.length > 0) {
+      outByChain[chainId] = chainCalls
+    }
+  }
 
-			calls[i] = tokenCalls
-		}
-
-		// Solo agrega calls si realmente hay al menos un token con calls
-		const hasAny = calls.some(v => v && v.length > 0)
-
-		out[chainId] = {
-			...entry,
-			calls: hasAny ? calls : undefined
-		}
-	}
-
-	return out
+  return outByChain
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRef } from 'react'
 import { Address, ZERO_ADDRESS } from 'thirdweb'
 import { ConnectButton, useActiveWallet, useEnsName } from 'thirdweb/react'
 import { encodeFunctionData, getAddress } from 'viem'
@@ -13,6 +14,9 @@ import { useCombinatorIntento } from '@/hooks/combinator-intento'
 import { useLiFi } from '@/hooks/li-fi'
 
 import { Blockchain } from './componets/Blockchain'
+import { RegisterStep, RegisterStepper } from './componets/Stepper.tsx'
+
+type StepStatus = 'idle' | 'loading' | 'done' | 'error'
 
 export default function Home() {
 	// thirdweb
@@ -32,6 +36,11 @@ export default function Home() {
 	})
 
 	// states
+	const [registerStatusByChain, setRegisterStatusByChain] = useState<
+		Record<number, StepStatus>
+	>({})
+	const [isRegistering, setIsRegistering] = useState(false)
+	const timeoutsRef = useRef<number[]>([])
 	const [expandedChains, setExpandedChains] = useState<Set<number>>(new Set())
 	const [selectedTokens, setSelectedTokens] = useState<Set<string>>(new Set())
 	// Objeto diff-only (vacío hasta click)
@@ -105,6 +114,9 @@ export default function Home() {
 			})
 	}, [dataBalancesWithEnabled])
 
+	// variables
+	const chainOrder = useMemo(() => [10, 137, 8453], [])
+
 	// effects
 	useEffect(() => {
 		if (balancesWithEnabled.length === 0) return
@@ -120,6 +132,14 @@ export default function Home() {
 
 		setSelectedTokens(prev => (prev.size > 0 ? prev : enabledTokens))
 	}, [balancesWithEnabled])
+
+	useEffect(() => {
+		return () => {
+			// cleanup timeouts
+			timeoutsRef.current.forEach(t => clearTimeout(t))
+			timeoutsRef.current = []
+		}
+	}, [])
 
 	// functions
 	const toggleChain = (chainId: number) => {
@@ -308,28 +328,89 @@ export default function Home() {
 		}
 	}
 
-	const onRegister = async () => {
-		const selectedTokensWithApproveCallsByChain =
-			buildApproveCalls(selectionByChain)
+	const registerSteps: RegisterStep[] = useMemo(() => {
+		const selectedChainIds = Object.keys(selectionByChain)
+			.map(Number)
+			.sort((a, b) => chainOrder.indexOf(a) - chainOrder.indexOf(b))
 
-		Object.entries(selectedTokensWithApproveCallsByChain).forEach(
-			([chainId, entry]) => {
-				const approveCalls = entry.calls
-				const registryCall = {
-					to: entry.spender,
-					data: encodeFunctionData({
-						abi: intentoAbi,
-						functionName: 'register',
-						args: [entry.addresses, entry.enable]
-					})
-				}
+		return selectedChainIds.map(chainId => ({
+			id: chainId,
+			label: getChainName(chainId),
+			logoSrc: `/blockchains/${chainId}.svg`,
+			status: registerStatusByChain[chainId] ?? 'idle'
+		}))
+	}, [selectionByChain, registerStatusByChain, chainOrder])
 
-				const calls = [...(approveCalls ?? []).filter(call => call !== null), registryCall]
-
-				console.log(calls)
-			}
+	const supportedBalances = useMemo(() => {
+		return balancesWithEnabled.filter(
+			b => b.chainId === 10 || b.chainId === 137 || b.chainId === 8453
 		)
+	}, [balancesWithEnabled])
+
+	const onRegister = async () => {
+		// limpia timers previos
+		timeoutsRef.current.forEach(t => clearTimeout(t))
+		timeoutsRef.current = []
+	
+		// approvals por chain (solo para enable=true y donde haga falta)
+		const approveCallsByChain = buildApproveCalls(selectionByChain)
+	
+		// ⚠️ los chains a procesar deben venir de selectionByChain (si no, perderías register cuando no hay approve)
+		const chainIds = Object.keys(selectionByChain)
+			.map(Number)
+			.sort((a, b) => [10, 137, 8453].indexOf(a) - [10, 137, 8453].indexOf(b))
+	
+		if (chainIds.length === 0) return
+	
+		// init statuses
+		setIsRegistering(true)
+		setRegisterStatusByChain(() => {
+			const base: Record<number, 'idle'> = {}
+			chainIds.forEach(id => (base[id] = 'idle'))
+			return base
+		})
+	
+		chainIds.forEach((chainId, idx) => {
+			const chainKey = String(chainId)
+			const entry = selectionByChain[chainKey]
+			if (!entry) return
+	
+			const approveCalls = approveCallsByChain[chainKey] ?? []
+	
+			const registryCall = {
+				to: entry.spender,
+				data: encodeFunctionData({
+					abi: intentoAbi,
+					functionName: 'register',
+					args: [entry.addresses, entry.enable]
+				})
+			}
+	
+			const calls = [...approveCalls, registryCall]
+	
+			// step: loading
+			const t1 = window.setTimeout(() => {
+				setRegisterStatusByChain(prev => ({ ...prev, [chainId]: 'loading' }))
+				// console.log('CHAIN', chainId, 'CALLS', calls)
+			}, idx * 1400)
+	
+			// step: done
+			const t2 = window.setTimeout(() => {
+				setRegisterStatusByChain(prev => ({ ...prev, [chainId]: 'done' }))
+	
+				// último => termina
+				if (idx === chainIds.length - 1) {
+					const t3 = window.setTimeout(() => {
+						setIsRegistering(false)
+					}, 400)
+					timeoutsRef.current.push(t3)
+				}
+			}, idx * 1400 + 1000)
+	
+			timeoutsRef.current.push(t1, t2)
+		})
 	}
+	
 
 	return (
 		<div className='min-h-screen w-full flex flex-col justify-center items-center gap-6'>
@@ -352,13 +433,24 @@ export default function Home() {
 			) : (
 				<div className='w-full flex flex-col justify-center items-center gap-3'>
 					<p>You are not registered</p>
+
 					{Object.keys(selectionByChain).length > 0 && (
-						<button
-							onClick={onRegister}
-							className='bg-blue-500 text-white px-4 py-2 rounded-md'
-						>
-							Register
-						</button>
+						<div className='w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col gap-4'>
+							<RegisterStepper steps={registerSteps} />
+
+							<button
+								onClick={onRegister}
+								disabled={isRegistering}
+								className={[
+									'text-white px-4 py-2 rounded-md',
+									isRegistering
+										? 'bg-zinc-700 cursor-not-allowed'
+										: 'bg-blue-500 hover:bg-blue-600'
+								].join(' ')}
+							>
+								{isRegistering ? 'Registering...' : 'Register'}
+							</button>
+						</div>
 					)}
 				</div>
 			)}
@@ -387,6 +479,8 @@ export default function Home() {
 							toggleToken={toggleToken}
 							toggleChain={toggleChain}
 							toggleAllTokens={toggleAllTokens}
+							isLast={index === supportedBalances.length - 1}
+							stepStatus={registerStatusByChain[balance.chainId] ?? 'idle'}
 						/>
 					)
 				})}

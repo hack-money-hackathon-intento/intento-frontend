@@ -6,6 +6,8 @@ import { useCombinatorIntento } from '@/hooks/combinator-intento'
 import { useErc20 } from '@/hooks/erc-20'
 import { Balances } from '@/models/balances'
 
+type StepStatus = 'idle' | 'loading' | 'done' | 'error'
+
 type Props = {
 	index: number
 	balance: Balances
@@ -29,6 +31,9 @@ type Props = {
 		balancesByToken: Record<string, bigint>,
 		allowancesByToken: Record<string, bigint>
 	) => void
+
+	isLast: boolean
+	stepStatus: StepStatus
 }
 
 export function Blockchain(props: Props) {
@@ -41,7 +46,10 @@ export function Blockchain(props: Props) {
 		getChainName,
 		toggleChain,
 		toggleToken,
-		toggleAllTokens
+		toggleAllTokens,
+
+		isLast: _isLast,
+		stepStatus
 	} = props
 
 	const [balancesByToken, setBalancesByToken] = useState<
@@ -92,13 +100,13 @@ export function Blockchain(props: Props) {
 				onClick={() => toggleChain(balance.chainId)}
 			>
 				<div className='flex items-center gap-3'>
-					<Image
-						src={`/blockchains/${balance.chainId.toString()}.svg`}
-						alt={getChainName(balance.chainId)}
-						width={24}
-						height={24}
-						className='w-6 h-6'
+					{/* 👇 Step icon (logo) */}
+					<ChainStepIcon
+						chainId={balance.chainId}
+						label={getChainName(balance.chainId)}
+						status={stepStatus}
 					/>
+
 					<span className='text-white font-medium text-base'>
 						{getChainName(balance.chainId)}
 					</span>
@@ -301,4 +309,69 @@ function TokenMetaRow(props: TokenMetaRowProps) {
 	}, [addrLower, rawBalance, rawAllowance, onMeta])
 
 	return null
+}
+
+function ChainStepIcon({
+	chainId,
+	label,
+	status
+}: {
+	chainId: number
+	label: string
+	status: 'idle' | 'loading' | 'done' | 'error'
+}) {
+	return (
+		<div className='relative z-10'>
+			{/* ring loading */}
+			{status === 'loading' && (
+				<div className='absolute -inset-1 rounded-full border-2 border-blue-500 border-t-transparent animate-spin' />
+			)}
+
+			{/* main circle */}
+			<div
+				className={[
+					'h-8 w-8 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border',
+					status === 'done'
+						? 'border-blue-500'
+						: status === 'error'
+							? 'border-red-500'
+							: 'border-zinc-700'
+				].join(' ')}
+			>
+				<Image
+					src={`/blockchains/${chainId.toString()}.svg`}
+					alt={label}
+					width={18}
+					height={18}
+					className='h-[18px] w-[18px]'
+				/>
+			</div>
+
+			{/* done badge */}
+			{status === 'done' && (
+				<div className='absolute -right-1 -bottom-1 h-4 w-4 rounded-full bg-blue-500 flex items-center justify-center border border-zinc-900'>
+					<svg
+						className='h-3 w-3 text-white'
+						fill='none'
+						stroke='currentColor'
+						viewBox='0 0 24 24'
+					>
+						<path
+							strokeLinecap='round'
+							strokeLinejoin='round'
+							strokeWidth={3}
+							d='M5 13l4 4L19 7'
+						/>
+					</svg>
+				</div>
+			)}
+
+			{/* error badge (opcional) */}
+			{status === 'error' && (
+				<div className='absolute -right-1 -bottom-1 h-4 w-4 rounded-full bg-red-500 flex items-center justify-center border border-zinc-900'>
+					<span className='text-[10px] text-white leading-none'>!</span>
+				</div>
+			)}
+		</div>
+	)
 }
