@@ -1,6 +1,6 @@
 import Image from 'next/image'
-import { useMemo } from 'react'
-import { ZERO_ADDRESS } from 'thirdweb'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Address, ZERO_ADDRESS } from 'thirdweb'
 
 import { useCombinatorIntento } from '@/hooks/combinator-intento'
 import { useErc20 } from '@/hooks/erc-20'
@@ -14,8 +14,21 @@ type Props = {
 	totalValue: number
 	getChainName: (chainId: number) => string
 	toggleChain: (chainId: number) => void
-	toggleToken: (chainId: number, tokenAddress: string) => void
-	toggleAllTokens: (chainId: number) => void
+	toggleToken: (
+		chainId: number,
+		tokenAddress: string,
+		checked: boolean,
+		spender: Address,
+		rawBalance: bigint,
+		rawAllowance: bigint
+	) => void
+	toggleAllTokens: (
+		chainId: number,
+		checked: boolean,
+		spender: Address,
+		balancesByToken: Record<string, bigint>,
+		allowancesByToken: Record<string, bigint>
+	) => void
 }
 
 export function Blockchain(props: Props) {
@@ -28,48 +41,52 @@ export function Blockchain(props: Props) {
 		getChainName,
 		toggleChain,
 		toggleToken,
-		toggleAllTokens,
+		toggleAllTokens
 	} = props
 
-	// combinator intento hook
+	const [balancesByToken, setBalancesByToken] = useState<
+		Record<string, bigint>
+	>({})
+	const [allowancesByToken, setAllowancesByToken] = useState<
+		Record<string, bigint>
+	>({})
+
+	const onMeta = useCallback(
+		(addrLower: string, rawBalance: bigint, rawAllowance: bigint) => {
+			setBalancesByToken(prev =>
+				prev[addrLower] === rawBalance
+					? prev
+					: { ...prev, [addrLower]: rawBalance }
+			)
+			setAllowancesByToken(prev =>
+				prev[addrLower] === rawAllowance
+					? prev
+					: { ...prev, [addrLower]: rawAllowance }
+			)
+		},
+		[]
+	)
+
+	// intento
+	/// address
 	const { useGetIntentoAddress } = useCombinatorIntento()
-	const { data: dataIntentoAddress, isLoading: _isLoadingIntentoAddress } =
-		useGetIntentoAddress(balance.chainId)
+	const { data: dataIntentoAddress } = useGetIntentoAddress(balance.chainId)
 
 	const intentoAddress = useMemo(() => {
 		return dataIntentoAddress ?? ZERO_ADDRESS
 	}, [dataIntentoAddress])
 
-	/// erc20 hook
-	const { useAllowance, useBalanceOf } = useErc20(
-		balance.chainId,
-		balance.tokens[0].address
-	)
-
-	/// allowance
-	const { data: dataAllowance, isLoading: _isLoadingAllowance } =
-		useAllowance(intentoAddress)
-
-	const _allowance = useMemo(() => {
-		return dataAllowance ?? 0
-	}, [dataAllowance])
-
-	/// balance of
-	const { data: dataBalanceOf, isLoading: _isLoadingBalanceOf } = useBalanceOf()
-	const _balanceOf = useMemo(() => {
-		return dataBalanceOf ?? 0
-	}, [dataBalanceOf])
-
 	const areAllSelected = useMemo(() => {
 		if (balance.tokens.length === 0) return false
-		return balance.tokens.every(token =>
-			selectedTokens.has(`${balance.chainId}-${token.address.toLowerCase()}`)
-		)
+		return balance.tokens.every(token => {
+			const key = `${balance.chainId}-${token.address.toLowerCase()}`
+			return selectedTokens.has(key)
+		})
 	}, [balance.chainId, balance.tokens, selectedTokens])
 
 	return (
 		<div key={index} className='bg-zinc-900 rounded-xl overflow-hidden'>
-			{/* Header de la chain - Clickable */}
+			{/* Header */}
 			<div
 				className='flex justify-between items-center p-4 cursor-pointer hover:bg-zinc-800 transition-colors'
 				onClick={() => toggleChain(balance.chainId)}
@@ -89,15 +106,25 @@ export function Blockchain(props: Props) {
 						({balance.tokens.length})
 					</span>
 				</div>
+
 				<div className='flex items-center gap-3'>
 					<span className='text-white font-medium'>
 						${totalValue.toFixed(2)}
 					</span>
+
 					<div className='relative' onClick={event => event.stopPropagation()}>
 						<input
 							type='checkbox'
 							checked={areAllSelected}
-							onChange={() => toggleAllTokens(balance.chainId)}
+							onChange={event =>
+								toggleAllTokens(
+									balance.chainId,
+									event.target.checked,
+									intentoAddress,
+									balancesByToken,
+									allowancesByToken
+								)
+							}
 							className='w-5 h-5 rounded border-2 border-zinc-600 bg-zinc-800 appearance-none cursor-pointer checked:bg-blue-500 checked:border-blue-500 hover:border-zinc-500 transition-all'
 						/>
 						{areAllSelected && (
@@ -116,7 +143,7 @@ export function Blockchain(props: Props) {
 							</svg>
 						)}
 					</div>
-					{/* Chevron animado */}
+
 					<svg
 						className={`w-5 h-5 text-zinc-400 transition-transform duration-300 ${
 							isExpanded ? 'rotate-180' : 'rotate-0'
@@ -134,82 +161,144 @@ export function Blockchain(props: Props) {
 					</svg>
 				</div>
 			</div>
+
 			<div className='border-t border-zinc-800'>
 				{/* Tokens */}
 				<div className='flex flex-col'>
 					{balance.tokens.map((token, tokenIndex) => {
 						const tokenKey = `${balance.chainId}-${token.address.toLowerCase()}`
 						const isSelected = selectedTokens.has(tokenKey)
+						const addrLower = token.address.toLowerCase()
 
 						return (
-							<div
-								key={tokenIndex}
-								className='flex justify-between items-center p-4 hover:bg-zinc-800/50 transition-colors'
-							>
-								<div className='flex items-center gap-3'>
-									<Image
-										src={token.logoURI ?? '/placeholder.svg'}
-										alt={token.symbol}
-										width={40}
-										height={40}
-										className='w-10 h-10 rounded-full'
-										unoptimized
-									/>
-									<div className='flex flex-col'>
-										<span className='text-white font-medium'>{token.name}</span>
-										<span className='text-zinc-400 text-sm'>
-											{(Number(token.amount) / 10 ** token.decimals).toFixed(6)}{' '}
-											{token.symbol}
-										</span>
-									</div>
-								</div>
-								<div className='flex items-center gap-3'>
-									<div className='flex flex-col items-end'>
-										<span className='text-white font-medium'>
-											$
-											{(
-												(Number(token.amount) * Number(token.priceUSD || 0)) /
-												10 ** token.decimals
-											).toFixed(2)}
-										</span>
-										<span
-											className={`text-xs ${token.enabled ? 'text-green-400' : 'text-red-400'}`}
-										>
-											{token.enabled ? 'Enabled' : 'Disabled'}
-										</span>
-									</div>
-									{/* Checkbox del token */}
-									<div className='relative'>
-										<input
-											type='checkbox'
-											checked={isSelected}
-											onChange={() =>
-												toggleToken(balance.chainId, token.address)
-											}
-											className='w-5 h-5 rounded border-2 border-zinc-600 bg-zinc-800 appearance-none cursor-pointer checked:bg-blue-500 checked:border-blue-500 hover:border-zinc-500 transition-all'
-										/>
-										{isSelected && (
-											<svg
-												className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 text-white pointer-events-none'
-												fill='none'
-												stroke='currentColor'
-												viewBox='0 0 24 24'
-											>
-												<path
-													strokeLinecap='round'
-													strokeLinejoin='round'
-													strokeWidth={3}
-													d='M5 13l4 4L19 7'
+							<Fragment key={tokenIndex}>
+								{/* Meta (on-chain) — siempre montado para llenar cache */}
+								<TokenMetaRow
+									chainId={balance.chainId}
+									tokenAddress={token.address}
+									intentoAddress={intentoAddress}
+									onMeta={onMeta}
+								/>
+
+								{/* UI row */}
+								{isExpanded && (
+									<div className='flex justify-between items-center p-4 hover:bg-zinc-800/50 transition-colors'>
+										<div className='flex items-center gap-3'>
+											<Image
+												src={token.logoURI ?? '/placeholder.svg'}
+												alt={token.symbol}
+												width={40}
+												height={40}
+												className='w-10 h-10 rounded-full'
+												unoptimized
+											/>
+											<div className='flex flex-col'>
+												<span className='text-white font-medium'>
+													{token.name}
+												</span>
+												<span className='text-zinc-400 text-sm'>
+													{(
+														Number(token.amount) /
+														10 ** token.decimals
+													).toFixed(6)}{' '}
+													{token.symbol}
+												</span>
+											</div>
+										</div>
+
+										<div className='flex items-center gap-3'>
+											<div className='flex flex-col items-end'>
+												<span className='text-white font-medium'>
+													$
+													{(
+														(Number(token.amount) *
+															Number(token.priceUSD || 0)) /
+														10 ** token.decimals
+													).toFixed(2)}
+												</span>
+												<span
+													className={`text-xs ${
+														token.enabled ? 'text-green-400' : 'text-red-400'
+													}`}
+												>
+													{token.enabled ? 'Enabled' : 'Disabled'}
+												</span>
+											</div>
+
+											<div className='relative'>
+												<input
+													type='checkbox'
+													checked={isSelected}
+													onChange={event => {
+														toggleToken(
+															balance.chainId,
+															token.address,
+															event.target.checked,
+															intentoAddress,
+															balancesByToken[addrLower] ?? BigInt(0),
+															allowancesByToken[addrLower] ?? BigInt(0)
+														)
+													}}
+													className='w-5 h-5 rounded border-2 border-zinc-600 bg-zinc-800 appearance-none cursor-pointer checked:bg-blue-500 checked:border-blue-500 hover:border-zinc-500 transition-all'
 												/>
-											</svg>
-										)}
+												{isSelected && (
+													<svg
+														className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 text-white pointer-events-none'
+														fill='none'
+														stroke='currentColor'
+														viewBox='0 0 24 24'
+													>
+														<path
+															strokeLinecap='round'
+															strokeLinejoin='round'
+															strokeWidth={3}
+															d='M5 13l4 4L19 7'
+														/>
+													</svg>
+												)}
+											</div>
+										</div>
 									</div>
-								</div>
-							</div>
+								)}
+							</Fragment>
 						)
 					})}
 				</div>
 			</div>
 		</div>
 	)
+}
+
+type TokenMetaRowProps = {
+	chainId: number
+	tokenAddress: Address
+	intentoAddress: Address
+	onMeta: (addrLower: string, rawBalance: bigint, rawAllowance: bigint) => void
+}
+
+function TokenMetaRow(props: TokenMetaRowProps) {
+	const { chainId, tokenAddress, intentoAddress, onMeta } = props
+
+	const { useAllowance, useBalanceOf } = useErc20(chainId, tokenAddress)
+
+	const { data: dataAllowance } = useAllowance(intentoAddress)
+	const { data: dataBalanceOf } = useBalanceOf()
+
+	const addrLower = useMemo(() => tokenAddress.toLowerCase(), [tokenAddress])
+
+	const rawAllowance = useMemo(() => {
+		// ajusta si tu hook retorna otro shape
+		return dataAllowance ?? BigInt(0)
+	}, [dataAllowance])
+
+	const rawBalance = useMemo(() => {
+		// tu hook ya trae rawBalance
+		return dataBalanceOf?.rawBalance ?? BigInt(0)
+	}, [dataBalanceOf])
+
+	useEffect(() => {
+		onMeta(addrLower, rawBalance, rawAllowance)
+	}, [addrLower, rawBalance, rawAllowance, onMeta])
+
+	return null
 }

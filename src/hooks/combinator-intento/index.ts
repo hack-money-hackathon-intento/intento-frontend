@@ -46,6 +46,9 @@ export function useCombinatorIntento(): CombinatorIntentoReturn {
 	}, [account])
 
 	return {
+		// =========================
+		//        READ METHODS
+		// =========================
 		useBalancesWithEnabled: (
 			balances: Balances[]
 		): UseQueryResult<Balances[], Error> => {
@@ -137,5 +140,8 @@ export function useCombinatorIntento(): CombinatorIntentoReturn {
 				placeholderData: (previous: Address | undefined) => previous
 			})
 		}
+		// =========================
+		//        WRITE METHODS
+		// =========================
 	}
 }
