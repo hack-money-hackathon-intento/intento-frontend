@@ -499,9 +499,8 @@ export default function Home() {
 				const approveCalls = approveCallsByChain[chainKey] ?? []
 				const hasEnableTrue = entry.enable.some(Boolean)
 
-				// --- build register args (tokens, amounts, enableds) ---
+				// --- build register args (tokens, enableds) ---
 				let registerAddresses: Address[] = []
-				let registerAmounts: bigint[] = []
 				let registerEnable: boolean[] = []
 
 				if (approveCalls.length === 0 && !hasEnableTrue) {
@@ -511,14 +510,12 @@ export default function Home() {
 								registerAddresses.push(
 									getAddress(entry.addresses[i]) as Address
 								)
-								registerAmounts.push(BigInt(0)) // disabled = 0 amount
 								registerEnable.push(false)
 							} catch {}
 						}
 					}
 					if (registerAddresses.length === 0) {
 						registerAddresses = [zeroAddress]
-						registerAmounts = [BigInt(0)]
 						registerEnable = [false]
 					}
 				} else {
@@ -526,10 +523,6 @@ export default function Home() {
 						try {
 							const addr = getAddress(entry.addresses[i]) as Address
 							registerAddresses.push(addr)
-							// Si está enabled, pasar el balance; si no, 0
-							registerAmounts.push(
-								entry.enable[i] ? entry.balances[i] : BigInt(0)
-							)
 							registerEnable.push(entry.enable[i])
 						} catch {
 							// skip invalid address
@@ -538,7 +531,6 @@ export default function Home() {
 
 					if (registerAddresses.length === 0) {
 						registerAddresses = [zeroAddress]
-						registerAmounts = [BigInt(0)]
 						registerEnable = [false]
 					}
 				}
@@ -548,7 +540,7 @@ export default function Home() {
 					data: encodeFunctionData({
 						abi: intentoAbi,
 						functionName: 'register',
-						args: [registerAddresses, registerAmounts, registerEnable]
+						args: [registerAddresses, registerEnable]
 					}),
 					value: '0x0' as const
 				}
