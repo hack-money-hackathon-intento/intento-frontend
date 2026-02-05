@@ -1,6 +1,9 @@
 import { Address } from 'thirdweb'
 import { base, Chain, optimism, polygon } from 'thirdweb/chains'
 
+export { CHAINS } from './chain'
+export { register } from './register'
+
 type IntentoContract = {
 	chainId: number
 	chain: Chain
@@ -24,5 +27,3 @@ export const INTENTO_CONTRACTS = [
 		contractAddress: '0x793d42beEBF15d58576c61062C494D61375e12C8'
 	}
 ] as IntentoContract[]
-
-export { verifyEnvVars } from './register'

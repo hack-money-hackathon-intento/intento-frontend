@@ -9,6 +9,7 @@ import { encodeFunctionData, getAddress, zeroAddress } from 'viem'
 import { numberToHex } from 'viem'
 
 import { intentoAbi } from '@/assets/json/abis'
+import { INTENTO_CONTRACTS } from '@/config/constants'
 import { chains, client } from '@/config/thirdweb.config'
 import { buildApproveCalls } from '@/helpers/build-approve-call.helper'
 import { toBigIntSafe } from '@/helpers/to-bigint-safe.helper'
@@ -49,6 +50,9 @@ export default function Home() {
 	const timeoutsRef = useRef<number[]>([])
 	const [expandedChains, setExpandedChains] = useState<Set<number>>(new Set())
 	const [selectedTokens, setSelectedTokens] = useState<Set<string>>(new Set())
+	const [isSendingUsdBundle, setIsSendingUsdBundle] = useState(false)
+	const [usdBundleError, setUsdBundleError] = useState<string | null>(null)
+	const [usdBundleTxUrls, setUsdBundleTxUrls] = useState<string[] | null>(null)
 	// Objeto diff-only (vacío hasta click)
 	const [selectionByChain, setSelectionByChain] = useState<
 		Record<
@@ -361,6 +365,167 @@ export default function Home() {
 			b => b.chainId === 10 || b.chainId === 137 || b.chainId === 8453
 		)
 	}, [balancesWithEnabled])
+
+	const getIntentoAddress = (chainId: number): Address => {
+		return (
+			INTENTO_CONTRACTS.find(contract => contract.chainId === chainId)
+				?.contractAddress ?? ZERO_ADDRESS
+		)
+	}
+
+	const computeFromAmountUsd = (priceUsd?: string, decimals?: number) => {
+		const price = Number(priceUsd)
+		if (!price || !decimals || price <= 0) return '0'
+		const raw = Math.floor((1 / price) * 10 ** decimals)
+		return raw > 0 ? raw.toString() : '0'
+	}
+
+	const createOrderId = () => {
+		const bytes = new Uint8Array(32)
+		crypto.getRandomValues(bytes)
+		return `0x${Array.from(bytes)
+			.map(b => b.toString(16).padStart(2, '0'))
+			.join('')}`
+	}
+
+	const findTokenBySymbols = (
+		tokens: (typeof balancesWithEnabled)[number]['tokens'],
+		symbols: string[]
+	) => {
+		return tokens.find(token =>
+			symbols.some(symbol => token.symbol.toLowerCase() === symbol.toLowerCase())
+		)
+	}
+
+	const buildUsdBundleQuotes = () => {
+		const baseSymbols = ['BIO', 'BRETT', 'REI']
+		const optimismSymbols = ['OP', 'USDC']
+
+		const quotesArgs: Record<string, QuoteArgs[]> = {}
+		const missing: string[] = []
+
+		const buildChainArgs = (chainId: number, symbols: string[]) => {
+			const chain = balancesWithEnabled.find(b => b.chainId === chainId)
+			if (!chain) {
+				missing.push(`chain:${chainId}`)
+				return
+			}
+
+			const intentoAddress = getIntentoAddress(chainId)
+			const args: QuoteArgs[] = []
+
+			symbols.forEach(symbol => {
+				const token = findTokenBySymbols(chain.tokens, [symbol])
+				if (!token) {
+					missing.push(`${symbol}@${chainId}`)
+					return
+				}
+
+				const fromAmount = computeFromAmountUsd(token.priceUSD, token.decimals)
+				if (fromAmount === '0') {
+					missing.push(`${symbol}@${chainId}:price`)
+					return
+				}
+
+				args.push({
+					fromToken: token.address,
+					fromAmount,
+					fromAddress: intentoAddress
+				})
+			})
+
+			if (args.length > 0) {
+				quotesArgs[String(chainId)] = args
+			}
+		}
+
+		const buildOptimismArgs = (chainId: number) => {
+			const chainIdNumber = Number(chainId)
+			const chain = balancesWithEnabled.find(b => b.chainId === chainIdNumber)
+			if (!chain) {
+				missing.push(`chain:${chainId}`)
+				return
+			}
+
+			const intentoAddress = getIntentoAddress(chainIdNumber)
+			const args: QuoteArgs[] = []
+
+			const token = findTokenBySymbols(chain.tokens, optimismSymbols)
+			if (!token) {
+				missing.push(`OP@${chainIdNumber}`)
+				return
+			}
+
+			const fromAmount = computeFromAmountUsd(token.priceUSD, token.decimals)
+			if (fromAmount === '0') {
+				missing.push(`${token.symbol}@${chainIdNumber}:price`)
+				return
+			}
+
+			args.push({
+				fromToken: token.address,
+				fromAmount,
+				fromAddress: intentoAddress
+			})
+
+			quotesArgs[String(chainIdNumber)] = args
+		}
+
+		buildChainArgs(8453, baseSymbols)
+		buildOptimismArgs(10)
+
+		return { quotesArgs, missing }
+	}
+
+	const onSendUsdBundle = async () => {
+		setUsdBundleError(null)
+		setUsdBundleTxUrls(null)
+
+		if (!wallet || !accountAddress || accountAddress === ZERO_ADDRESS) {
+			setUsdBundleError('Connect a wallet first.')
+			return
+		}
+
+		const { quotesArgs, missing } = buildUsdBundleQuotes()
+		if (missing.length > 0) {
+			setUsdBundleError(`Missing tokens/prices: ${missing.join(', ')}`)
+			return
+		}
+
+		setIsSendingUsdBundle(true)
+		try {
+			const response = await fetch('/api/tx', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					orderId: createOrderId(),
+					creds: { key: '', secret: '', passphrase: '' },
+					marketId: '',
+					outcomeIndex: 0,
+					from: accountAddress,
+					quotesArgs
+				})
+			})
+
+			const result = (await response.json()) as {
+				success: boolean
+				data?: string[]
+				error?: string
+			}
+
+			if (!response.ok || !result.success) {
+				throw new Error(result.error || 'Failed to send bundle')
+			}
+
+			setUsdBundleTxUrls(result.data ?? [])
+		} catch (error) {
+			setUsdBundleError(
+				error instanceof Error ? error.message : 'Failed to send bundle'
+			)
+		} finally {
+			setIsSendingUsdBundle(false)
+		}
+	}
 
 	const onSetTokens = async () => {
 		timeoutsRef.current.forEach(t => clearTimeout(t))
@@ -761,6 +926,44 @@ export default function Home() {
 					)}
 				</div>
 			)}
+
+			<div className='w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3'>
+				<button
+					onClick={onSendUsdBundle}
+					disabled={isSendingUsdBundle}
+					className={[
+						'text-white px-4 py-2 rounded-md',
+						isSendingUsdBundle
+							? 'bg-zinc-700 cursor-not-allowed'
+							: 'bg-violet-600 hover:bg-violet-700'
+					].join(' ')}
+				>
+					{isSendingUsdBundle
+						? 'Sending...'
+						: 'Send $1 BIO/BRETT/REI (Base) + $1 OP'}
+				</button>
+
+				{usdBundleError && (
+					<p className='text-sm text-red-400'>{usdBundleError}</p>
+				)}
+
+				{usdBundleTxUrls && usdBundleTxUrls.length > 0 && (
+					<div className='text-sm text-zinc-300 flex flex-col gap-1'>
+						<span>Txs:</span>
+						{usdBundleTxUrls.map(url => (
+							<a
+								key={url}
+								href={url}
+								target='_blank'
+								rel='noreferrer'
+								className='text-blue-400 hover:underline break-all'
+							>
+								{url}
+							</a>
+						))}
+					</div>
+				)}
+			</div>
 
 			<div className='flex flex-col gap-2 w-full max-w-md'>
 				{balancesWithEnabled.map((balance, index) => {
