@@ -1,12 +1,12 @@
 import { getAddress } from 'viem'
 
-import { Balances } from '@/models/balances'
+import { LiFiBalances } from '@/models/li-fi-balances.model'
 
 import { BalancesResponse } from '../dtos/balances.dto'
 
 export function mapBalancesResponseToBalances(
 	balancesResponse: BalancesResponse
-): Balances[] {
+): LiFiBalances[] {
 	return Object.entries(balancesResponse.balances).map(
 		([chainId, tokensDto]) => ({
 			chainId: Number(chainId),
