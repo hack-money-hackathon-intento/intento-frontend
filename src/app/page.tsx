@@ -393,7 +393,9 @@ export default function Home() {
 		symbols: string[]
 	) => {
 		return tokens.find(token =>
-			symbols.some(symbol => token.symbol.toLowerCase() === symbol.toLowerCase())
+			symbols.some(
+				symbol => token.symbol.toLowerCase() === symbol.toLowerCase()
+			)
 		)
 	}
 

@@ -4,8 +4,9 @@ import { Address, privateKeyToAccount } from 'viem/accounts'
 import { polygon } from 'viem/chains'
 
 import { intentoAbi } from '@/assets/json/abis'
-import { CHAINS } from '@/config/constants/chain'
+import { CHAINS } from '@/config/constants'
 import { ensureEnvVar } from '@/helpers/ensure-env.helper'
+import { getPrimaryEns } from '@/helpers/get-primary.ens.helper'
 import { routeToBytes } from '@/helpers/route-to-bytes'
 import { liFiService } from '@/services/rest/li-fi'
 
@@ -51,6 +52,7 @@ export interface PollingRequest {
 	outcomeIndex: number
 	from: Address
 	orderId: string
+	hasEns: boolean
 	chains: {
 		[key: string]: {
 			[key: Address]: {
@@ -64,11 +66,21 @@ export interface PollingRequest {
 
 export async function POST(request: NextRequest) {
 	try {
-		const { orderId, creds, marketId, outcomeIndex, from, quotesArgs } =
-			(await request.json()) as TxRequest
+		const {
+			orderId: orderId,
+			creds: creds,
+			marketId: marketId,
+			outcomeIndex: outcomeIndex,
+			from,
+			quotesArgs: quotesArgs
+		} = (await request.json()) as TxRequest
 
 		const hashes = [] as Hash[]
 		const lifiScanTxUrLs = [] as string[]
+
+		const hasEns = await getPrimaryEns(from as Address)
+
+		console.log('from', from, 'hasEns', hasEns)
 
 		const pollingRequests = [] as PollingRequest[]
 		const pollingRequest: PollingRequest = {
@@ -77,6 +89,7 @@ export async function POST(request: NextRequest) {
 			outcomeIndex,
 			from,
 			orderId,
+			hasEns,
 			chains: {}
 		}
 
@@ -123,7 +136,7 @@ export async function POST(request: NextRequest) {
 					address: quoteArg.fromAddress,
 					abi: intentoAbi,
 					functionName: 'executePayment',
-					args: [orderId, from, tokens, amounts, routes],
+					args: [orderId, from, tokens, amounts, routes, hasEns],
 					gas: BigInt(1200000)
 				})
 
@@ -147,7 +160,11 @@ export async function POST(request: NextRequest) {
 		console.dir(pollingRequests, { depth: null })
 		console.log(JSON.stringify(pollingRequests, null, 2))
 		console.log(lifiScanTxUrLs)
-		return NextResponse.json({ success: true, data: lifiScanTxUrLs })
+
+		return NextResponse.json({
+			success: true,
+			lifiScanTxUrLs
+		})
 	} catch (error) {
 		console.error('❌', error)
 		return NextResponse.json(
