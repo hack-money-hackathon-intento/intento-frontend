@@ -1,0 +1,152 @@
+/* ============================================= */
+/* NEON CARDS - Martian Retro-Futurism Style   */
+/* Mars Rust (#C45D3E) Glow Effects             */
+/* ============================================= */
+
+/* Base neon card style */
+.card-neon {
+  background: linear-gradient(135deg, #1A1A1F 0%, #0A0A0C 100%);
+  border: 1px solid rgba(196, 93, 62, 0.3);
+  border-radius: 12px;
+  position: relative;
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+/* Animated gradient border effect */
+.card-neon::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 13px;
+  padding: 1px;
+  background: linear-gradient(135deg, #C45D3E 0%, #8B3E2F 50%, #C45D3E 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.5;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+/* Hover state - intensify glow */
+.card-neon:hover::before {
+  opacity: 1;
+}
+
+.card-neon:hover {
+  box-shadow:
+    0 0 20px rgba(196, 93, 62, 0.3),
+    0 0 40px rgba(196, 93, 62, 0.15),
+    0 0 60px rgba(196, 93, 62, 0.05);
+  transform: translateY(-2px);
+}
+
+/* Variant: More subtle for smaller cards */
+.card-neon-subtle {
+  background: linear-gradient(135deg, #1A1A1F 0%, #0A0A0C 100%);
+  border: 1px solid rgba(196, 93, 62, 0.2);
+  border-radius: 8px;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.card-neon-subtle::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 9px;
+  padding: 1px;
+  background: linear-gradient(135deg, #C45D3E 0%, #8B3E2F 50%, #C45D3E 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.3;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.card-neon-subtle:hover::before {
+  opacity: 0.7;
+}
+
+.card-neon-subtle:hover {
+  box-shadow: 0 0 15px rgba(196, 93, 62, 0.2);
+  transform: translateY(-1px);
+}
+
+/* Variant: Square corners (for UI consistency) */
+.card-neon-square {
+  background: linear-gradient(135deg, #1A1A1F 0%, #0A0A0C 100%);
+  border: 1px solid rgba(196, 93, 62, 0.3);
+  border-radius: 4px;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.card-neon-square::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 5px;
+  padding: 1px;
+  background: linear-gradient(135deg, #C45D3E 0%, #8B3E2F 50%, #C45D3E 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.5;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.card-neon-square:hover::before {
+  opacity: 1;
+}
+
+.card-neon-square:hover {
+  box-shadow:
+    0 0 20px rgba(196, 93, 62, 0.3),
+    0 0 40px rgba(196, 93, 62, 0.1);
+  transform: translateY(-2px);
+}
+
+/* Active/Selected state */
+.card-neon.active,
+.card-neon-subtle.active,
+.card-neon-square.active {
+  border-color: rgba(196, 93, 62, 0.6);
+  box-shadow:
+    0 0 20px rgba(196, 93, 62, 0.4),
+    0 0 40px rgba(196, 93, 62, 0.2),
+    inset 0 0 20px rgba(196, 93, 62, 0.1);
+}
+
+.card-neon.active::before,
+.card-neon-subtle.active::before,
+.card-neon-square.active::before {
+  opacity: 1;
+}
+
+/* Disabled state */
+.card-neon.disabled,
+.card-neon-subtle.disabled,
+.card-neon-square.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ============================================= */
+/* UTILITY: Content wrapper inside neon card    */
+/* ============================================= */
+
+/* Ensures content is above the ::before pseudo-element */
+.card-neon > *,
+.card-neon-subtle > *,
+.card-neon-square > * {
+  position: relative;
+  z-index: 1;
+}
