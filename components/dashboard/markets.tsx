@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useMarkets } from "@/lib/hooks/usePolymarket"
+import { useMarkets } from "@/lib/hooks/useMarkets"
 import { polymarketService, PolymarketMarket } from "@/lib/services/polymarket"
 
 interface MarketsProps {

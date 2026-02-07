@@ -11,7 +11,7 @@ import { HeroSection } from "@/components/landing/hero-section"
 import { HowItWorks } from "@/components/landing/how-it-works"
 import { OnboardingModal } from "@/components/landing/onboarding-modal"
 import { Dashboard } from "@/components/dashboard/dashboard"
-import { RegistrationScreen } from "@/components/registration/registration-screen"
+import { TwoStepRegistration } from "@/components/registration/two-step-registration"
 import { RegisterStep } from "@/components/registration/stepper"
 
 import { useCombinatorIntento } from "@/hooks/combinator-intento"
@@ -554,10 +554,10 @@ export default function Home() {
     )
   }
 
-  // User is not registered - show registration screen
+  // User is not registered - show two-step registration
   if (!isRegistered) {
     return (
-      <RegistrationScreen
+      <TwoStepRegistration
         accountAddress={accountAddress}
         registerSteps={registerSteps}
         selectionByChain={selectionByChain}

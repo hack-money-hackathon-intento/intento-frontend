@@ -44,10 +44,12 @@ export function DashboardLayout({ children, activeView, onViewChange }: Dashboar
 
             {/* Right side - Wallet */}
             <div className="flex items-center gap-4">
-              <div className="hidden md:flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1A1A1F] border border-[#2D2D35]">
-                <div className={`h-2 w-2 rounded-full ${address ? 'bg-[#3BFF8A]' : 'bg-[#FF3B3B]'} animate-pulse`} />
-                <span className="font-mono text-xs text-[#F5EDE0]">{truncatedAddress}</span>
-              </div>
+              {address && (
+                <div className="hidden md:flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1A1A1F] border border-[#2D2D35]">
+                  <div className="h-2 w-2 rounded-full bg-[#3BFF8A] animate-pulse" />
+                  <span className="font-mono text-xs text-[#F5EDE0]">{truncatedAddress}</span>
+                </div>
+              )}
 
               <ConnectButton
                 client={client}
@@ -63,6 +65,12 @@ export function DashboardLayout({ children, activeView, onViewChange }: Dashboar
                     fontSize: "14px",
                     borderRadius: "0.5rem",
                     padding: "8px 16px",
+                  },
+                }}
+                detailsButton={{
+                  style: {
+                    background: "#C45D3E",
+                    color: "#F5EDE0",
                   },
                 }}
               />
