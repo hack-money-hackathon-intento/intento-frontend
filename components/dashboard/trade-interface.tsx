@@ -23,6 +23,7 @@ interface Token {
   usdValue: number
   priceUSD: number
   icon: string
+  logoURI?: string
   color: string
 }
 
@@ -75,7 +76,8 @@ export function TradeInterface({ market, onBack }: TradeInterfaceProps) {
             decimals: token.decimals,
             usdValue,
             priceUSD: Number(token.priceUSD || 0),
-            icon: token.symbol[0],
+            icon: (token as any).logoURI || token.symbol[0],
+            logoURI: (token as any).logoURI,
             color: chainInfo.color
           })
         }
@@ -312,10 +314,14 @@ export function TradeInterface({ market, onBack }: TradeInterfaceProps) {
                       >
                         <div className="flex items-center gap-3">
                           <div 
-                            className="w-8 h-8 rounded-full flex items-center justify-center"
+                            className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden"
                             style={{ backgroundColor: `${token.color}20` }}
                           >
-                            <span style={{ color: token.color }} className="text-xs font-bold">{token.icon}</span>
+                            {token.icon.startsWith('http') ? (
+                              <img src={token.icon} alt={token.symbol} className="w-full h-full object-cover" />
+                            ) : (
+                              <span style={{ color: token.color }} className="text-xs font-bold">{token.icon}</span>
+                            )}
                           </div>
                           <div>
                             <p className="font-sans text-sm text-dust">{token.symbol}</p>
@@ -392,15 +398,19 @@ function TokenSliderCard({ token, percentage, onPercentageChange }: TokenSliderC
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
           <div 
-            className="w-10 h-10 rounded-full flex items-center justify-center"
+            className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden"
             style={{ backgroundColor: `${token.color}20` }}
           >
-            <span 
-              className="text-sm font-bold"
-              style={{ color: token.color }}
-            >
-              {token.icon[0]}
-            </span>
+            {token.icon.startsWith('http') ? (
+              <img src={token.icon} alt={token.symbol} className="w-full h-full object-cover" />
+            ) : (
+              <span 
+                className="text-sm font-bold"
+                style={{ color: token.color }}
+              >
+                {token.icon[0]}
+              </span>
+            )}
           </div>
           <div>
             <p className="font-sans font-semibold text-dust">{token.name}</p>

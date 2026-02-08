@@ -1,0 +1,6 @@
+.
+├── estructura.txt
+├── MatrixRain.tsx
+└── SplitFlapDisplay.tsx
+
+1 directory, 3 files
